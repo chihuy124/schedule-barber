@@ -17,7 +17,6 @@ import {
   X,
   Loader2,
   Trash2,
-  Settings,
   Radio,
   Ban,
   Check,
@@ -52,7 +51,6 @@ import {
   minutesToTime,
   PHONE_ERROR_MESSAGE,
   sanitizePhoneInput,
-  timeToMinutes,
 } from "@/lib/utils";
 
 interface Props {

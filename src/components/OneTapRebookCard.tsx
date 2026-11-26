@@ -6,7 +6,6 @@ import Link from "next/link";
 import {
   Zap,
   Sparkles,
-  Clock,
   CheckCircle2,
   Phone,
   ArrowRight,

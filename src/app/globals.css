@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-obsidian: #0c0c0e;
+  --color-charcoal: #141417;
+  --color-surface: #1b1b20;
+  --color-surface-elevated: #232329;
+  --color-border-subtle: #2a2a32;
+  --color-gold: #c8a253;
+  --color-gold-light: #e2c179;
+  --color-gold-dark: #9b7934;
+  --color-ivory: #f4f1ea;
+  --color-muted: #9a968e;
+  --color-emerald-live: #34d399;
+  --color-amber-live: #f59e0b;
+  --color-crimson: #ef4444;
+
+  --font-serif: var(--font-be-vietnam), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-be-vietnam), system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-obsidian);
+  color: var(--color-ivory);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="switch"]:not(:disabled),
+  a[href],
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:not(:disabled),
+  a[href] {
+    transition:
+      transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease,
+      filter 160ms ease,
+      opacity 160ms ease;
+  }
+
+  button:not(:disabled):not([role="switch"]):hover {
+    filter: brightness(1.12);
+    box-shadow: 0 4px 16px -4px rgba(200, 162, 83, 0.2);
+  }
+
+  button:not(:disabled):not([role="switch"]):active {
+    transform: scale(0.96);
+    filter: brightness(0.95);
+  }
+
+  a[href].rounded-full:hover,
+  a[href].rounded-xl:hover,
+  a[href].rounded-2xl:hover {
+    filter: brightness(1.08);
+  }
+
+  a[href].rounded-full:active,
+  a[href].rounded-xl:active,
+  a[href].rounded-2xl:active {
+    transform: scale(0.97);
+    filter: brightness(0.96);
+  }
+
+  button:focus-visible,
+  a[href]:focus-visible {
+    outline: 2px solid rgba(200, 162, 83, 0.75);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active,
+  a[href]:active {
+    transform: none;
+  }
+}
+
+/* Subtle classic barber pinstripe texture utility */
+.bg-barber-grid {
+  background-image:
+    radial-gradient(circle at 20% 0%, rgba(200, 162, 83, 0.09), transparent 45%),
+    radial-gradient(circle at 85% 20%, rgba(200, 162, 83, 0.06), transparent 40%),
+    linear-gradient(to bottom, rgba(200, 162, 83, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 48px;
+}
+
+.gold-shimmer {
+  background: linear-gradient(135deg, #b89142 0%, #e5c882 50%, #c8a253 100%);
+}
+
+.card-classic {
+  background: linear-gradient(180deg, rgba(27, 27, 32, 0.92) 0%, rgba(20, 20, 23, 0.96) 100%);
+  border: 1px solid rgba(200, 162, 83, 0.16);
+}
+
+.card-classic:hover {
+  border-color: rgba(200, 162, 83, 0.34);
+}
+
+/* Custom subtle dark scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0c0c0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a32;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c8a253;
+}

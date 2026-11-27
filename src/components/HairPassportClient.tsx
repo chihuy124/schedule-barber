@@ -133,16 +133,18 @@ export function HairPassportClient({ today }: { today: string }) {
           ) : (
             <span className="text-muted">Tra cứu nhanh chỉ bằng SĐT.</span>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setPhoneInput("0901234567");
-              runLookup("0901234567");
-            }}
-            className="text-gold-light/90 hover:text-gold-light hover:underline"
-          >
-            Xem hồ sơ mẫu (0901 234 567) →
-          </button>
+          {process.env.NODE_ENV !== "production" && (
+            <button
+              type="button"
+              onClick={() => {
+                setPhoneInput("0901234567");
+                runLookup("0901234567");
+              }}
+              className="text-gold-light/90 hover:text-gold-light hover:underline"
+            >
+              Xem hồ sơ mẫu (0901 234 567) →
+            </button>
+          )}
         </div>
       </form>
 

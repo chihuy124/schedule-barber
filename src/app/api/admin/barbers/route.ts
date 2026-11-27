@@ -143,3 +143,26 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    if (!(await isAdminAuthenticated())) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { searchParams } = new URL(request.url);
+    const id = Number(searchParams.get("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      return NextResponse.json({ error: "ID thợ không hợp lệ." }, { status: 400 });
+    }
+
+    const db = await getDb();
+    await db.execute({ sql: "DELETE FROM barbers WHERE id = ?", args: [id] });
+    return NextResponse.json({ deleted: true, id });
+  } catch (error) {
+    console.error("DELETE /api/admin/barbers error:", error);
+    return NextResponse.json(
+      { error: "Không thể xóa thợ." },
+      { status: 500 }
+    );
+  }
+}

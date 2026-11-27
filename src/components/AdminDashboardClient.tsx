@@ -24,6 +24,7 @@ import {
   Store,
   Lock,
   QrCode,
+  AlertTriangle,
 } from "lucide-react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { buildVietQrUrl, VIETQR_BANKS } from "@/lib/vietqr";
@@ -196,6 +197,15 @@ export function AdminDashboardClient({
   const [offEnd, setOffEnd] = useState("14:00");
   const [offReason, setOffReason] = useState("Nghỉ đột xuất");
   const [savingSchedule, setSavingSchedule] = useState(false);
+
+  // Confirm Delete / Reset Modal state
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: "service"; service: Service }
+    | { type: "barber"; barber: Barber }
+    | { type: "reset_demo"; includeServices: boolean }
+    | null
+  >(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -776,6 +786,74 @@ export function AdminDashboardClient({
       showToast("Đã cập nhật mã PIN quản trị mới!");
     } finally {
       setSavingPin(false);
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    setConfirmLoading(true);
+    try {
+      if (confirmAction.type === "service") {
+        const res = await fetch(
+          `/api/admin/services?id=${confirmAction.service.id}`,
+          { method: "DELETE" }
+        );
+        if (!res.ok) {
+          const j = await res.json();
+          showToast(j.error || "Không thể xóa dịch vụ.");
+          return;
+        }
+        setServices((prev) =>
+          prev.filter((s) => s.id !== confirmAction.service.id)
+        );
+        setWalkInServiceIds((prev) =>
+          prev.filter((id) => id !== confirmAction.service.id)
+        );
+        showToast(`Đã xóa dịch vụ "${confirmAction.service.name}".`);
+      } else if (confirmAction.type === "barber") {
+        const res = await fetch(
+          `/api/admin/barbers?id=${confirmAction.barber.id}`,
+          { method: "DELETE" }
+        );
+        if (!res.ok) {
+          const j = await res.json();
+          showToast(j.error || "Không thể xóa thợ.");
+          return;
+        }
+        setBarbers((prev) =>
+          prev.filter((b) => b.id !== confirmAction.barber.id)
+        );
+        await Promise.all([fetchBookings(selectedDate), refreshLiveChair()]);
+        showToast(`Đã xóa thợ "${confirmAction.barber.name}".`);
+      } else if (confirmAction.type === "reset_demo") {
+        const res = await fetch("/api/admin/reset-demo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            includeServices: confirmAction.includeServices,
+          }),
+        });
+        if (!res.ok) {
+          const j = await res.json();
+          showToast(j.error || "Không thể dọn dữ liệu.");
+          return;
+        }
+        setBookings([]);
+        setTimeOffs([]);
+        if (confirmAction.includeServices) {
+          setServices([]);
+          setWalkInServiceIds([]);
+        }
+        await refreshLiveChair();
+        showToast(
+          confirmAction.includeServices
+            ? "Đã xóa sạch khách, lịch hẹn, hồ sơ tóc & dịch vụ mẫu!"
+            : "Đã xóa sạch khách, lịch hẹn & hồ sơ tóc mẫu!"
+        );
+      }
+      setConfirmAction(null);
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -1410,38 +1488,58 @@ export function AdminDashboardClient({
   tab === "services" && (
     <div className="grid gap-6 lg:grid-cols-12">
       <div className="space-y-3 lg:col-span-7">
-        {services.map((svc) => (
-          <div
-            key={svc.id}
-            className={`card-classic flex items-center justify-between gap-4 rounded-2xl p-4 transition-opacity ${svc.is_active ? "opacity-100" : "opacity-60"
+        {services.length === 0 ? (
+          <div className="rounded-2xl border border-border-subtle bg-charcoal p-8 text-center text-sm text-muted">
+            Chưa có dịch vụ nào. Hãy thêm dịch vụ thật của tiệm ở khung bên cạnh.
+          </div>
+        ) : (
+          services.map((svc) => (
+            <div
+              key={svc.id}
+              className={`card-classic flex items-center justify-between gap-4 rounded-2xl p-4 transition-opacity ${
+                svc.is_active ? "opacity-100" : "opacity-60"
               }`}
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-serif text-base font-semibold text-ivory">
-                  {svc.name}
-                </span>
-                {!svc.is_active && (
-                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
-                    Đang ẩn
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-serif text-base font-semibold text-ivory">
+                    {svc.name}
                   </span>
-                )}
+                  {!svc.is_active && (
+                    <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+                      Đang ẩn
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-muted">
+                  {svc.duration_minutes} phút ·{" "}
+                  <strong className="text-gold-light">
+                    {formatVND(svc.price)}
+                  </strong>
+                </div>
               </div>
-              <div className="text-xs text-muted">
-                {svc.duration_minutes} phút ·{" "}
-                <strong className="text-gold-light">
-                  {formatVND(svc.price)}
-                </strong>
+              <div className="flex items-center gap-3">
+                <ToggleSwitch
+                  checked={svc.is_active}
+                  label={svc.is_active ? "Bật" : "Tắt"}
+                  ariaLabel={`Bật tắt dịch vụ ${svc.name}`}
+                  onChange={() => handleToggleService(svc)}
+                />
+                <button
+                  type="button"
+                  title="Xóa dịch vụ"
+                  aria-label={`Xóa dịch vụ ${svc.name}`}
+                  onClick={() =>
+                    setConfirmAction({ type: "service", service: svc })
+                  }
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/25 bg-red-500/10 text-red-400 hover:border-red-400/60 hover:bg-red-500/20 hover:text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
-            <ToggleSwitch
-              checked={svc.is_active}
-              label={svc.is_active ? "Bật" : "Tắt"}
-              ariaLabel={`Bật tắt dịch vụ ${svc.name}`}
-              onChange={() => handleToggleService(svc)}
-            />
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <form
@@ -1520,33 +1618,52 @@ export function AdminDashboardClient({
             : " Đang bật bước Chọn Thợ (kèm tùy chọn Thợ trống sớm nhất) trên trang đặt lịch."}
         </div>
 
-        {barbers.map((b) => (
-          <div
-            key={b.id}
-            className={`card-classic flex items-start justify-between gap-4 rounded-2xl p-5 transition-opacity ${
-              b.is_active ? "opacity-100" : "opacity-60"
-            }`}
-          >
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gold/40 bg-gold/10 font-serif text-lg font-bold text-gold-light">
-                {b.name.charAt(0)}
+        {barbers.length === 0 ? (
+          <div className="rounded-2xl border border-border-subtle bg-charcoal p-8 text-center text-sm text-muted">
+            Chưa có thợ nào. Hãy thêm thợ đầu tiên của tiệm ở khung bên cạnh để bắt đầu nhận lịch.
+          </div>
+        ) : (
+          barbers.map((b) => (
+            <div
+              key={b.id}
+              className={`card-classic flex items-start justify-between gap-4 rounded-2xl p-5 transition-opacity ${
+                b.is_active ? "opacity-100" : "opacity-60"
+              }`}
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gold/40 bg-gold/10 font-serif text-lg font-bold text-gold-light">
+                  {b.name.charAt(0)}
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-semibold text-ivory">
+                    {b.name}
+                  </h3>
+                  <p className="text-xs text-gold/90">{b.title}</p>
+                  <p className="mt-1 text-xs text-muted">{b.specialty}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-serif text-lg font-semibold text-ivory">
-                  {b.name}
-                </h3>
-                <p className="text-xs text-gold/90">{b.title}</p>
-                <p className="mt-1 text-xs text-muted">{b.specialty}</p>
+              <div className="flex items-center gap-3">
+                <ToggleSwitch
+                  checked={b.is_active}
+                  label={b.is_active ? "Hoạt động" : "Tạm ngưng"}
+                  ariaLabel={`Bật tắt thợ ${b.name}`}
+                  onChange={() => handleToggleBarberActive(b)}
+                />
+                <button
+                  type="button"
+                  title="Xóa thợ"
+                  aria-label={`Xóa thợ ${b.name}`}
+                  onClick={() =>
+                    setConfirmAction({ type: "barber", barber: b })
+                  }
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/25 bg-red-500/10 text-red-400 hover:border-red-400/60 hover:bg-red-500/20 hover:text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
-            <ToggleSwitch
-              checked={b.is_active}
-              label={b.is_active ? "Hoạt động" : "Tạm ngưng"}
-              ariaLabel={`Bật tắt thợ ${b.name}`}
-              onChange={() => handleToggleBarberActive(b)}
-            />
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <form
@@ -2037,6 +2154,114 @@ export function AdminDashboardClient({
         Cập nhật mã PIN
       </button>
     </form>
+
+      {/* Clean Demo / Test Data Card */}
+      <div className="rounded-2xl border border-red-500/25 bg-charcoal/90 p-5 sm:p-6 space-y-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 text-red-400">
+            <AlertTriangle className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="font-serif text-base font-bold text-ivory">
+              Dọn Dữ Liệu Mẫu / Test
+            </h2>
+            <p className="text-xs text-muted">
+              Làm sạch lịch hẹn &amp; khách mẫu trước khi mở tiệm thật
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setConfirmAction({ type: "reset_demo", includeServices: false })
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/35 bg-red-500/10 py-2.5 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Xóa khách, lịch hẹn &amp; hồ sơ tóc mẫu
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setConfirmAction({ type: "reset_demo", includeServices: true })
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-obsidian py-2 text-xs font-medium text-red-300/90 hover:border-red-400/50 hover:bg-red-500/10"
+          >
+            Xóa luôn cả danh sách dịch vụ mẫu
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* MODAL: CONFIRM DELETE / RESET */}
+{confirmAction && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+    <div className="card-classic w-full max-w-md rounded-3xl p-6 space-y-4 shadow-2xl">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/35 bg-red-500/15 text-red-400">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="font-serif text-lg font-bold text-ivory">
+            {confirmAction.type === "service" && "Xác nhận xóa dịch vụ"}
+            {confirmAction.type === "barber" && "Xác nhận xóa thợ"}
+            {confirmAction.type === "reset_demo" && "Xác nhận dọn sạch dữ liệu"}
+          </h3>
+          <p className="text-xs leading-relaxed text-muted">
+            {confirmAction.type === "service" && (
+              <>
+                Bạn chắc chắn muốn xóa dịch vụ{" "}
+                <strong className="text-ivory">
+                  {confirmAction.service.name}
+                </strong>
+                ? Hành động này không thể hoàn tác.
+              </>
+            )}
+            {confirmAction.type === "barber" && (
+              <>
+                Bạn chắc chắn muốn xóa thợ{" "}
+                <strong className="text-ivory">
+                  {confirmAction.barber.name}
+                </strong>
+                ? Các lịch hẹn gắn với thợ này cũng sẽ bị xóa theo và không thể hoàn tác.
+              </>
+            )}
+            {confirmAction.type === "reset_demo" && (
+              <>
+                Thao tác này sẽ xóa toàn bộ{" "}
+                <strong className="text-ivory">
+                  khách hàng, lịch hẹn, hồ sơ tóc, lịch nghỉ đột xuất
+                  {confirmAction.includeServices ? " và toàn bộ dịch vụ" : ""}
+                </strong>{" "}
+                hiện có. Cài đặt tiệm, giờ mở cửa và tài khoản thợ vẫn được giữ nguyên.
+              </>
+            )}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2 pt-2">
+        <button
+          type="button"
+          disabled={confirmLoading}
+          onClick={() => setConfirmAction(null)}
+          className="rounded-xl border border-border-subtle bg-surface px-4 py-2.5 text-xs font-medium text-ivory hover:border-gold/40"
+        >
+          Hủy bỏ
+        </button>
+        <button
+          type="button"
+          disabled={confirmLoading}
+          onClick={handleConfirmAction}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+        >
+          {confirmLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Xác nhận xóa
+        </button>
+      </div>
     </div>
   </div>
 )}

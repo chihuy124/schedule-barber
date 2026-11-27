@@ -349,7 +349,7 @@ export function OneTapRebookCard() {
               Không cần tạo mật khẩu — lưu tự động trên thiết bị cho lần sau.
             </span>
           )}
-          {!savedPhone && (
+          {process.env.NODE_ENV !== "production" && !savedPhone && (
             <button
               type="button"
               onClick={() => {

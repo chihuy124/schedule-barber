@@ -178,7 +178,8 @@ async function initSchemaAndSeed(db: Client): Promise<void> {
   }
 
   const settingsCount = await db.execute("SELECT COUNT(*) as c FROM shop_settings");
-  if (Number(settingsCount.rows[0].c) === 0) {
+  const isFreshDb = Number(settingsCount.rows[0].c) === 0;
+  if (isFreshDb) {
     await db.execute({
       sql: `INSERT INTO shop_settings (id, name, tagline, address, phone, slot_interval_minutes, admin_pin)
             VALUES (1, ?, ?, ?, ?, ?, ?)`,
@@ -186,7 +187,7 @@ async function initSchemaAndSeed(db: Client): Promise<void> {
         "Ken Barbershop",
         "Nghệ thuật cắt tóc quý ông — Chuẩn mực từng đường kéo",
         "128 Nguyễn Trãi, Quận 1, TP. Hồ Chí Minh",
-        "0909 888 666",
+        "0909888666",
         30,
         "1234",
       ],
@@ -205,8 +206,12 @@ async function initSchemaAndSeed(db: Client): Promise<void> {
     }
   }
 
+  // Only seed sample barber, services, customers & bookings in local development on a brand-new DB
+  // Production starts completely clean so the shop owner enters real data via /admin.
+  const isProduction =
+    process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
   const barberCount = await db.execute("SELECT COUNT(*) as c FROM barbers");
-  if (Number(barberCount.rows[0].c) === 0) {
+  if (!isProduction && isFreshDb && Number(barberCount.rows[0].c) === 0) {
     const barberRes = await db.execute({
       sql: `INSERT INTO barbers (name, title, bio, avatar_url, specialty, is_active, current_status, estimated_free_at, sort_order)
             VALUES (?, ?, ?, ?, ?, 1, 'available', NULL, 1)`,

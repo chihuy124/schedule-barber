@@ -79,16 +79,18 @@ export function AdminLoginForm() {
             Đăng nhập quản trị
           </button>
 
-          <div className="rounded-xl border border-gold/15 bg-gold/5 px-3.5 py-2.5 text-center text-xs text-muted">
-            Môi trường local demo — Mã PIN mặc định:{" "}
-            <button
-              type="button"
-              onClick={() => setPin("1234")}
-              className="font-mono font-bold text-gold-light hover:underline"
-            >
-              1234
-            </button>
-          </div>
+          {process.env.NODE_ENV !== "production" && (
+            <div className="rounded-xl border border-gold/15 bg-gold/5 px-3.5 py-2.5 text-center text-xs text-muted">
+              Môi trường local demo — Mã PIN mặc định:{" "}
+              <button
+                type="button"
+                onClick={() => setPin("1234")}
+                className="font-mono font-bold text-gold-light hover:underline"
+              >
+                1234
+              </button>
+            </div>
+          )}
         </form>
 
         <div className="mt-5 text-center">

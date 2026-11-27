@@ -188,6 +188,15 @@ export default async function HomePage() {
           </p>
         </div>
 
+        {services.length === 0 ? (
+          <div className="card-classic rounded-2xl p-8 text-center text-sm text-muted">
+            Bảng giá dịch vụ đang được cập nhật. Vui lòng liên hệ hotline{" "}
+            <strong className="text-gold-light">
+              {formatPhoneDisplay(settings.phone)}
+            </strong>{" "}
+            để được tư vấn trực tiếp.
+          </div>
+        ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {services.map((svc) => (
             <Link
@@ -239,6 +248,7 @@ export default async function HomePage() {
             </Link>
           ))}
         </div>
+        )}
       </section>
 
       {/* BARBER & LOOKBOOK SECTION */}

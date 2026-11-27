@@ -55,7 +55,6 @@ export default async function AdminPage() {
           payment_account_name: settings.payment_account_name,
           payment_qr_url: settings.payment_qr_url,
           payment_note: settings.payment_note,
-          sepay_api_key: settings.sepay_api_key,
         }}
         today={now.date}
         currentTime={now.time}

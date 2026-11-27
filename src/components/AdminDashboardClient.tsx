@@ -27,9 +27,7 @@ import {
   AlertTriangle,
   Banknote,
   CreditCard,
-  Copy,
   RotateCcw,
-  KeyRound,
 } from "lucide-react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { buildVietQrUrl, VIETQR_BANKS } from "@/lib/vietqr";
@@ -79,7 +77,6 @@ interface Props {
     payment_account_name: string | null;
     payment_qr_url: string | null;
     payment_note: string | null;
-    sepay_api_key: string | null;
   };
   today: string;
   currentTime: string;
@@ -191,12 +188,6 @@ export function AdminDashboardClient({
   const [paymentNote, setPaymentNote] = useState<string>(
     initialSettings.payment_note ?? ""
   );
-  const [sepayApiKey, setSepayApiKey] = useState<string>(
-    initialSettings.sepay_api_key ?? ""
-  );
-  const [savingSepay, setSavingSepay] = useState(false);
-  const [webhookOrigin, setWebhookOrigin] = useState<string>("");
-  const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [uploadingQr, setUploadingQr] = useState(false);
   const [savingQr, setSavingQr] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -268,10 +259,6 @@ export function AdminDashboardClient({
       setBarbers(json.barbers ?? []);
     }
   }, [refreshLiveChair]);
-
-  useEffect(() => {
-    setWebhookOrigin(window.location.origin);
-  }, []);
 
   useEffect(() => {
     fetchBookings(selectedDate);
@@ -390,44 +377,6 @@ export function AdminDashboardClient({
             }) — ${booking.customer_name}`
           : `Đã chuyển về Chưa thanh toán — ${booking.customer_name}`
       );
-    }
-  };
-
-  const handleSaveSepayKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingSepay(true);
-    try {
-      const parsedInterval = Math.min(
-        120,
-        Math.max(5, Number(slotInterval) || 30)
-      );
-      const res = await fetch("/api/admin/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: shopName.trim() || initialSettings.name,
-          tagline: shopTagline.trim(),
-          address: shopAddress.trim() || initialSettings.address,
-          phone: isValidVietnamesePhone(shopPhone)
-            ? shopPhone.trim()
-            : initialSettings.phone,
-          slot_interval_minutes: parsedInterval,
-          sepay_api_key: sepayApiKey.trim() || null,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        showToast(json.error || "Không thể lưu API Key SePay.");
-        return;
-      }
-      setSepayApiKey(json.settings.sepay_api_key ?? "");
-      showToast(
-        json.settings.sepay_api_key
-          ? "Đã lưu API Key Webhook SePay!"
-          : "Đã tắt Webhook SePay."
-      );
-    } finally {
-      setSavingSepay(false);
     }
   };
 
@@ -2264,106 +2213,6 @@ export function AdminDashboardClient({
           Lưu cấu hình mã QR
         </button>
       </div>
-
-      {/* Auto Bank Payment Confirmation (SePay Webhook) */}
-      <form
-        onSubmit={handleSaveSepayKey}
-        className="card-classic rounded-2xl p-5 sm:p-6 space-y-4"
-      >
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
-            <KeyRound className="h-4 w-4" />
-          </div>
-          <div>
-            <h2 className="font-serif text-base font-bold text-ivory">
-              Tự Động Xác Nhận CK (SePay)
-            </h2>
-            <p className="text-xs text-muted">
-              Ngân hàng báo nhận tiền → tự đánh dấu Đã thanh toán
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted">
-            Webhook URL (dán vào SePay)
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              readOnly
-              value={
-                webhookOrigin
-                  ? `${webhookOrigin}/api/webhooks/sepay`
-                  : "/api/webhooks/sepay"
-              }
-              className="w-full min-w-0 rounded-xl border border-border-subtle bg-obsidian px-3 py-2 font-mono text-[11px] text-ivory/90"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const url = `${webhookOrigin || ""}/api/webhooks/sepay`;
-                navigator.clipboard?.writeText(url);
-                setCopiedWebhook(true);
-                setTimeout(() => setCopiedWebhook(false), 1800);
-              }}
-              className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-gold/35 bg-gold/10 px-3 py-2 text-xs font-semibold text-gold-light hover:bg-gold hover:text-obsidian"
-            >
-              {copiedWebhook ? (
-                <Check className="h-3.5 w-3.5 text-emerald-400" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-              {copiedWebhook ? "Đã copy" : "Copy"}
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-muted">
-              SePay API Key (Header Authorization: Apikey)
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-                let rand = "ken_";
-                for (let i = 0; i < 24; i++) {
-                  rand += chars[Math.floor(Math.random() * chars.length)];
-                }
-                setSepayApiKey(rand);
-              }}
-              className="text-[11px] font-medium text-gold-light hover:underline"
-            >
-              Tạo key ngẫu nhiên
-            </button>
-          </div>
-          <input
-            type="text"
-            value={sepayApiKey}
-            onChange={(e) => setSepayApiKey(e.target.value)}
-            placeholder="Dán API Key trùng với cấu hình trên SePay..."
-            className="w-full rounded-xl border border-border-subtle bg-obsidian px-3.5 py-2.5 font-mono text-xs text-ivory focus:border-gold focus:outline-none"
-          />
-        </div>
-
-        <div className="rounded-xl border border-white/5 bg-obsidian/60 p-3 text-[11px] leading-relaxed text-muted space-y-1">
-          <p className="font-semibold text-ivory/90">Cách bật tự động trong 2 phút:</p>
-          <p>1. Đăng ký tài khoản miễn phí tại <strong className="text-gold-light">sepay.vn</strong> và liên kết STK ngân hàng.</p>
-          <p>2. Tạo Webhook mới → dán <strong>Webhook URL</strong> ở trên, chọn xác thực <strong>API Key</strong> và dán cùng chuỗi Key này.</p>
-          <p>3. Khách quét mã VietQR chuyển đủ tiền kèm mã <code className="text-ivory">KEN XXXX</code> → web tự động đổi sang <strong>Đã thanh toán</strong>!</p>
-        </div>
-
-        <button
-          type="submit"
-          disabled={savingSepay}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 py-2.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-40"
-        >
-          {savingSepay && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Lưu cấu hình SePay
-        </button>
-      </form>
 
       {/* Change Admin PIN Card */}
       <form

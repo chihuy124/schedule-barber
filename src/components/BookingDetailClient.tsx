@@ -104,48 +104,6 @@ export function BookingDetailClient({
     };
   }, [showReschedule, newDate, booking.total_duration, booking.barber_id, booking.id]);
 
-  // Gently poll booking payment status while customer is viewing an unpaid QR ticket
-  const shouldPollPayment =
-    booking.payment_status === "unpaid" &&
-    booking.status !== "cancelled" &&
-    booking.status !== "no_show" &&
-    ((shop.payment_qr_mode === "vietqr" &&
-      Boolean(shop.payment_bank_bin && shop.payment_account_no)) ||
-      (shop.payment_qr_mode === "image" && Boolean(shop.payment_qr_url)));
-
-  useEffect(() => {
-    if (!shouldPollPayment) return;
-    let active = true;
-    let ticks = 0;
-    const MAX_TICKS = 60; // Stop after ~8 minutes to keep Vercel invocations minimal
-
-    const checkPayment = async () => {
-      if (!active || document.visibilityState !== "visible") return;
-      ticks += 1;
-      if (ticks > MAX_TICKS) return;
-      try {
-        const res = await fetch(`/api/bookings/${booking.code}`, {
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const json = await res.json();
-        if (active && json?.booking) {
-          setBooking(json.booking);
-        }
-      } catch {
-        // silent retry
-      }
-    };
-
-    const id = setInterval(checkPayment, 8000);
-    document.addEventListener("visibilitychange", checkPayment);
-    return () => {
-      active = false;
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", checkPayment);
-    };
-  }, [shouldPollPayment, booking.code]);
-
   const statusMeta = BOOKING_STATUS_META[booking.status] ?? {
     label: booking.status,
     colorClass: "bg-zinc-800 text-zinc-300 border-zinc-700",
@@ -510,7 +468,7 @@ export function BookingDetailClient({
                     </div>
                   </div>
                   <p className="text-[11px] text-muted">
-                    Trang tự động cập nhật trạng thái <strong>Đã thanh toán</strong> sau khi chuyển khoản hoặc thợ xác nhận.
+                    Sau khi chuyển khoản, đưa màn hình cho thợ xác nhận thanh toán tại tiệm.
                   </p>
                 </div>
               </div>

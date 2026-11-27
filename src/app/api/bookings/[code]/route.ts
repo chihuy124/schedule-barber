@@ -26,6 +26,8 @@ const patchBookingSchema = z.object({
   start_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   barber_id: z.number().int().positive().optional(),
   note: z.string().max(400).optional().nullable(),
+  payment_status: z.enum(["unpaid", "paid"]).optional(),
+  payment_method: z.enum(["cash", "transfer"]).nullable().optional(),
 });
 
 async function findBookingByCodeOrId(codeOrId: string) {
@@ -103,6 +105,12 @@ export async function PATCH(
 
     // Non-admin can only cancel or reschedule confirmed bookings
     if (!isAdmin) {
+      if (data.payment_status !== undefined || data.payment_method !== undefined) {
+        return NextResponse.json(
+          { error: "Chỉ quản trị viên mới có thể xác nhận thanh toán." },
+          { status: 403 }
+        );
+      }
       if (data.status && data.status !== "cancelled") {
         return NextResponse.json(
           { error: "Bạn chỉ có thể hủy hoặc đổi giờ lịch hẹn." },
@@ -149,10 +157,29 @@ export async function PATCH(
       }
     }
 
+    const nextPaymentStatus = data.payment_status ?? existing.payment_status;
+    let nextPaymentMethod = existing.payment_method;
+    let nextPaidAt = existing.paid_at;
+    let nextPaymentRef = existing.payment_ref;
+
+    if (data.payment_status === "paid") {
+      nextPaymentMethod = data.payment_method ?? existing.payment_method ?? "cash";
+      nextPaidAt = existing.paid_at ?? new Date().toISOString();
+      if (!nextPaymentRef) {
+        nextPaymentRef = nextPaymentMethod === "cash" ? "MANUAL-CASH" : "MANUAL-TRANSFER";
+      }
+    } else if (data.payment_status === "unpaid") {
+      nextPaymentMethod = null;
+      nextPaidAt = null;
+      nextPaymentRef = null;
+    }
+
     await db.execute({
       sql: `UPDATE bookings
             SET date = ?, start_time = ?, end_time = ?, barber_id = ?,
-                status = ?, note = ?, updated_at = datetime('now')
+                status = ?, note = ?,
+                payment_status = ?, payment_method = ?, paid_at = ?, payment_ref = ?,
+                updated_at = datetime('now')
             WHERE id = ?`,
       args: [
         newDate,
@@ -161,6 +188,10 @@ export async function PATCH(
         newBarberId,
         newStatus,
         data.note !== undefined ? data.note : existing.note,
+        nextPaymentStatus,
+        nextPaymentMethod,
+        nextPaidAt,
+        nextPaymentRef,
         existing.id,
       ],
     });

@@ -11,6 +11,8 @@ export type BookingStatus =
 export type BookingSource = "online" | "walk_in";
 
 export type PaymentQrMode = "vietqr" | "image" | "off";
+export type PaymentStatus = "unpaid" | "paid";
+export type PaymentMethod = "cash" | "transfer";
 
 export interface ShopSettings {
   id: number;
@@ -26,6 +28,7 @@ export interface ShopSettings {
   payment_account_name: string | null;
   payment_qr_url: string | null;
   payment_note: string | null;
+  sepay_api_key: string | null;
 }
 
 export interface Barber {
@@ -79,6 +82,10 @@ export interface Booking {
   status: BookingStatus;
   source: BookingSource;
   note: string | null;
+  payment_status: PaymentStatus;
+  payment_method: PaymentMethod | null;
+  paid_at: string | null;
+  payment_ref: string | null;
   created_at: string;
   updated_at: string;
 }

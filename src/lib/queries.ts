@@ -84,6 +84,13 @@ export function mapBookingWithDetails(row: Row): BookingWithDetails {
     status: String(row.status) as BookingStatus,
     source: String(row.source) as "online" | "walk_in",
     note: row.note ? String(row.note) : null,
+    payment_status: String(row.payment_status ?? "unpaid") === "paid" ? "paid" : "unpaid",
+    payment_method:
+      row.payment_method === "cash" || row.payment_method === "transfer"
+        ? row.payment_method
+        : null,
+    paid_at: row.paid_at ? String(row.paid_at) : null,
+    payment_ref: row.payment_ref ? String(row.payment_ref) : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
     customer_name: String(row.customer_name ?? ""),
@@ -136,6 +143,7 @@ export async function getShopSettings(): Promise<ShopSettings> {
       : null,
     payment_qr_url: r.payment_qr_url ? String(r.payment_qr_url) : null,
     payment_note: r.payment_note ? String(r.payment_note) : null,
+    sepay_api_key: r.sepay_api_key ? String(r.sepay_api_key) : null,
   };
 }
 
@@ -443,6 +451,13 @@ export async function getLiveChairSummary(): Promise<LiveChairSummary> {
     status: String(r.status) as BookingStatus,
     source: String(r.source) as "online" | "walk_in",
     note: r.note ? String(r.note) : null,
+    payment_status: String(r.payment_status ?? "unpaid") === "paid" ? "paid" : "unpaid",
+    payment_method:
+      r.payment_method === "cash" || r.payment_method === "transfer"
+        ? r.payment_method
+        : null,
+    paid_at: r.paid_at ? String(r.paid_at) : null,
+    payment_ref: r.payment_ref ? String(r.payment_ref) : null,
     created_at: String(r.created_at),
     updated_at: String(r.updated_at),
   }));

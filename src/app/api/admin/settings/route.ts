@@ -30,6 +30,7 @@ const patchSettingsSchema = z.object({
   payment_account_name: z.string().trim().max(120).nullable().optional(),
   payment_qr_url: z.string().trim().max(650000).nullable().optional(),
   payment_note: z.string().trim().max(250).nullable().optional(),
+  sepay_api_key: z.string().trim().max(200).nullable().optional(),
   new_pin: z
     .string()
     .trim()
@@ -56,6 +57,7 @@ export async function GET() {
       payment_account_name: s.payment_account_name,
       payment_qr_url: s.payment_qr_url,
       payment_note: s.payment_note,
+      sepay_api_key: s.sepay_api_key,
     },
   });
 }
@@ -108,6 +110,10 @@ export async function PATCH(request: NextRequest) {
       d.payment_note !== undefined
         ? d.payment_note || null
         : current.payment_note;
+    const nextSepayKey =
+      d.sepay_api_key !== undefined
+        ? d.sepay_api_key || null
+        : current.sepay_api_key;
 
     await db.execute({
       sql: `UPDATE shop_settings
@@ -115,7 +121,7 @@ export async function PATCH(request: NextRequest) {
                 slot_interval_minutes = ?, admin_pin = ?,
                 payment_qr_mode = ?, payment_bank_bin = ?,
                 payment_account_no = ?, payment_account_name = ?,
-                payment_qr_url = ?, payment_note = ?
+                payment_qr_url = ?, payment_note = ?, sepay_api_key = ?
             WHERE id = 1`,
       args: [
         d.name,
@@ -130,6 +136,7 @@ export async function PATCH(request: NextRequest) {
         nextAccountName,
         nextQrUrl,
         nextPaymentNote,
+        nextSepayKey,
       ],
     });
 
@@ -153,6 +160,7 @@ export async function PATCH(request: NextRequest) {
         payment_account_name: updated.payment_account_name,
         payment_qr_url: updated.payment_qr_url,
         payment_note: updated.payment_note,
+        sepay_api_key: updated.sepay_api_key,
       },
       pin_updated: Boolean(d.new_pin),
     });

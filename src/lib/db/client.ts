@@ -50,7 +50,8 @@ async function initSchemaAndSeed(db: Client): Promise<void> {
       payment_account_no TEXT,
       payment_account_name TEXT,
       payment_qr_url TEXT,
-      payment_note TEXT
+      payment_note TEXT,
+      sepay_api_key TEXT
     );
 
     CREATE TABLE IF NOT EXISTS barbers (
@@ -124,6 +125,10 @@ async function initSchemaAndSeed(db: Client): Promise<void> {
       status TEXT NOT NULL DEFAULT 'confirmed',
       source TEXT NOT NULL DEFAULT 'online',
       note TEXT,
+      payment_status TEXT NOT NULL DEFAULT 'unpaid',
+      payment_method TEXT,
+      paid_at TEXT,
+      payment_ref TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
@@ -175,6 +180,26 @@ async function initSchemaAndSeed(db: Client): Promise<void> {
   }
   if (!settingsCols.has("payment_account_name")) {
     await db.execute("ALTER TABLE shop_settings ADD COLUMN payment_account_name TEXT");
+  }
+  if (!settingsCols.has("sepay_api_key")) {
+    await db.execute("ALTER TABLE shop_settings ADD COLUMN sepay_api_key TEXT");
+  }
+
+  const bookingColsRes = await db.execute("PRAGMA table_info(bookings)");
+  const bookingCols = new Set(bookingColsRes.rows.map((r) => String(r.name)));
+  if (!bookingCols.has("payment_status")) {
+    await db.execute(
+      "ALTER TABLE bookings ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid'"
+    );
+  }
+  if (!bookingCols.has("payment_method")) {
+    await db.execute("ALTER TABLE bookings ADD COLUMN payment_method TEXT");
+  }
+  if (!bookingCols.has("paid_at")) {
+    await db.execute("ALTER TABLE bookings ADD COLUMN paid_at TEXT");
+  }
+  if (!bookingCols.has("payment_ref")) {
+    await db.execute("ALTER TABLE bookings ADD COLUMN payment_ref TEXT");
   }
 
   const settingsCount = await db.execute("SELECT COUNT(*) as c FROM shop_settings");

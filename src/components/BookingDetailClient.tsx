@@ -104,6 +104,48 @@ export function BookingDetailClient({
     };
   }, [showReschedule, newDate, booking.total_duration, booking.barber_id, booking.id]);
 
+  // Gently poll booking payment status while customer is viewing an unpaid QR ticket
+  const shouldPollPayment =
+    booking.payment_status === "unpaid" &&
+    booking.status !== "cancelled" &&
+    booking.status !== "no_show" &&
+    ((shop.payment_qr_mode === "vietqr" &&
+      Boolean(shop.payment_bank_bin && shop.payment_account_no)) ||
+      (shop.payment_qr_mode === "image" && Boolean(shop.payment_qr_url)));
+
+  useEffect(() => {
+    if (!shouldPollPayment) return;
+    let active = true;
+    let ticks = 0;
+    const MAX_TICKS = 60; // Stop after ~8 minutes to keep Vercel invocations minimal
+
+    const checkPayment = async () => {
+      if (!active || document.visibilityState !== "visible") return;
+      ticks += 1;
+      if (ticks > MAX_TICKS) return;
+      try {
+        const res = await fetch(`/api/bookings/${booking.code}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (active && json?.booking) {
+          setBooking(json.booking);
+        }
+      } catch {
+        // silent retry
+      }
+    };
+
+    const id = setInterval(checkPayment, 8000);
+    document.addEventListener("visibilitychange", checkPayment);
+    return () => {
+      active = false;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", checkPayment);
+    };
+  }, [shouldPollPayment, booking.code]);
+
   const statusMeta = BOOKING_STATUS_META[booking.status] ?? {
     label: booking.status,
     colorClass: "bg-zinc-800 text-zinc-300 border-zinc-700",
@@ -259,11 +301,19 @@ export function BookingDetailClient({
             </button>
           </div>
 
-          <span
-            className={`rounded-full border px-3.5 py-1 text-xs font-semibold ${statusMeta.colorClass}`}
-          >
-            {statusMeta.label}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {booking.payment_status === "paid" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Đã thanh toán
+              </span>
+            )}
+            <span
+              className={`rounded-full border px-3.5 py-1 text-xs font-semibold ${statusMeta.colorClass}`}
+            >
+              {statusMeta.label}
+            </span>
+          </div>
         </div>
 
         {/* Main details */}
@@ -341,8 +391,33 @@ export function BookingDetailClient({
             </p>
           </div>
 
-          {/* Bank Transfer QR Code (VietQR dynamic or uploaded static image) */}
-          {resolvedQrUrl && booking.status !== "cancelled" && (
+          {/* Paid Confirmation Banner OR Bank Transfer QR Code */}
+          {booking.payment_status === "paid" && booking.status !== "cancelled" ? (
+            <div className="flex items-center gap-3.5 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 p-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-400/40 bg-emerald-500/20 text-emerald-300">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="text-sm font-bold text-emerald-200">
+                  Đã thanh toán thành công · {formatVND(booking.total_price)}
+                </div>
+                <p className="text-xs text-emerald-200/80">
+                  Phương thức:{" "}
+                  <strong>
+                    {booking.payment_method === "transfer"
+                      ? "Chuyển khoản ngân hàng"
+                      : "Tiền mặt tại tiệm"}
+                  </strong>
+                  {booking.payment_ref &&
+                    !booking.payment_ref.startsWith("MANUAL-") && (
+                      <span className="ml-1.5 font-mono text-[11px] opacity-85">
+                        · Mã GD: {booking.payment_ref}
+                      </span>
+                    )}
+                </p>
+              </div>
+            </div>
+          ) : resolvedQrUrl && booking.status !== "cancelled" ? (
             <div className="rounded-2xl border border-gold/25 bg-obsidian/70 p-4 sm:p-5">
               <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
                 <a
@@ -434,10 +509,13 @@ export function BookingDetailClient({
                       </button>
                     </div>
                   </div>
+                  <p className="text-[11px] text-muted">
+                    Trang tự động cập nhật trạng thái <strong>Đã thanh toán</strong> sau khi chuyển khoản hoặc thợ xác nhận.
+                  </p>
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Action buttons */}
           <div className="grid gap-2.5">

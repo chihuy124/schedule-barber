@@ -25,6 +25,11 @@ import {
   Lock,
   QrCode,
   AlertTriangle,
+  Banknote,
+  CreditCard,
+  Copy,
+  RotateCcw,
+  KeyRound,
 } from "lucide-react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { buildVietQrUrl, VIETQR_BANKS } from "@/lib/vietqr";
@@ -35,7 +40,9 @@ import type {
   BookingStatus,
   BookingWithDetails,
   LiveChairBarberInfo,
+  PaymentMethod,
   PaymentQrMode,
+  PaymentStatus,
   Service,
   TimeOff,
   WorkingHour,
@@ -72,6 +79,7 @@ interface Props {
     payment_account_name: string | null;
     payment_qr_url: string | null;
     payment_note: string | null;
+    sepay_api_key: string | null;
   };
   today: string;
   currentTime: string;
@@ -183,6 +191,12 @@ export function AdminDashboardClient({
   const [paymentNote, setPaymentNote] = useState<string>(
     initialSettings.payment_note ?? ""
   );
+  const [sepayApiKey, setSepayApiKey] = useState<string>(
+    initialSettings.sepay_api_key ?? ""
+  );
+  const [savingSepay, setSavingSepay] = useState(false);
+  const [webhookOrigin, setWebhookOrigin] = useState<string>("");
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [uploadingQr, setUploadingQr] = useState(false);
   const [savingQr, setSavingQr] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -254,6 +268,10 @@ export function AdminDashboardClient({
       setBarbers(json.barbers ?? []);
     }
   }, [refreshLiveChair]);
+
+  useEffect(() => {
+    setWebhookOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     fetchBookings(selectedDate);
@@ -341,6 +359,75 @@ export function AdminDashboardClient({
               BOOKING_STATUS_META[status]?.label ?? status
             }`
       );
+    }
+  };
+
+  // Manual payment confirmation / undo
+  const handleUpdatePayment = async (
+    booking: BookingWithDetails,
+    paymentStatus: PaymentStatus,
+    paymentMethod?: PaymentMethod
+  ) => {
+    const res = await fetch(`/api/bookings/${booking.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payment_status: paymentStatus,
+        payment_method: paymentStatus === "paid" ? paymentMethod ?? "cash" : null,
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === booking.id ? { ...b, ...json.booking } : b
+        )
+      );
+      showToast(
+        paymentStatus === "paid"
+          ? `Đã xác nhận thanh toán (${
+              paymentMethod === "transfer" ? "Chuyển khoản" : "Tiền mặt"
+            }) — ${booking.customer_name}`
+          : `Đã chuyển về Chưa thanh toán — ${booking.customer_name}`
+      );
+    }
+  };
+
+  const handleSaveSepayKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSepay(true);
+    try {
+      const parsedInterval = Math.min(
+        120,
+        Math.max(5, Number(slotInterval) || 30)
+      );
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: shopName.trim() || initialSettings.name,
+          tagline: shopTagline.trim(),
+          address: shopAddress.trim() || initialSettings.address,
+          phone: isValidVietnamesePhone(shopPhone)
+            ? shopPhone.trim()
+            : initialSettings.phone,
+          slot_interval_minutes: parsedInterval,
+          sepay_api_key: sepayApiKey.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        showToast(json.error || "Không thể lưu API Key SePay.");
+        return;
+      }
+      setSepayApiKey(json.settings.sepay_api_key ?? "");
+      showToast(
+        json.settings.sepay_api_key
+          ? "Đã lưu API Key Webhook SePay!"
+          : "Đã tắt Webhook SePay."
+      );
+    } finally {
+      setSavingSepay(false);
     }
   };
 
@@ -866,6 +953,12 @@ export function AdminDashboardClient({
     (sum, b) => sum + b.total_price,
     0
   );
+  const collectedRevenue = bookings
+    .filter((b) => b.payment_status === "paid" && b.status !== "cancelled")
+    .reduce((sum, b) => sum + b.total_price, 0);
+  const paidCount = bookings.filter(
+    (b) => b.payment_status === "paid" && b.status !== "cancelled"
+  ).length;
   const activeBarbers = barbers.filter((b) => b.is_active);
 
   return (
@@ -1052,9 +1145,12 @@ export function AdminDashboardClient({
               </div>
             </div>
             <div className="rounded-2xl border border-border-subtle bg-charcoal p-4">
-              <div className="text-xs text-muted">Doanh thu dự kiến</div>
-              <div className="mt-1 font-serif text-2xl font-bold text-gold-light">
-                {formatVND(estimatedRevenue)}
+              <div className="text-xs text-muted">Đã thu ({paidCount} đơn)</div>
+              <div className="mt-1 font-serif text-2xl font-bold text-emerald-300">
+                {formatVND(collectedRevenue)}
+              </div>
+              <div className="mt-0.5 text-[11px] text-muted">
+                Dự kiến: {formatVND(estimatedRevenue)}
               </div>
             </div>
             <div className="rounded-2xl border border-border-subtle bg-charcoal p-4">
@@ -1159,6 +1255,27 @@ export function AdminDashboardClient({
                               <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-300">
                                 Vãng lai
                               </span>
+                            )}
+                            {bk.status !== "cancelled" && bk.status !== "no_show" && (
+                              bk.payment_status === "paid" ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Đã thanh toán ·{" "}
+                                  {bk.payment_method === "transfer"
+                                    ? "Chuyển khoản"
+                                    : "Tiền mặt"}
+                                  {bk.payment_ref &&
+                                    !bk.payment_ref.startsWith("MANUAL-") && (
+                                      <span className="ml-0.5 opacity-80">
+                                        (Auto)
+                                      </span>
+                                    )}
+                                </span>
+                              ) : (
+                                <span className="rounded-full border border-zinc-700 bg-zinc-800/80 px-2.5 py-0.5 text-[10px] font-medium text-zinc-400">
+                                  Chưa thanh toán
+                                </span>
+                              )
                             )}
                           </div>
                           <div className="text-xs text-muted">
@@ -1276,6 +1393,66 @@ export function AdminDashboardClient({
                         >
                           Hủy
                         </button>
+                      </div>
+                    )}
+
+                    {/* Manual Payment Confirmation Bar (works both during and after haircut) */}
+                    {!["cancelled", "no_show"].includes(bk.status) && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-2.5">
+                        {bk.payment_status === "paid" ? (
+                          <>
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-300">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Đã thu {formatVND(bk.total_price)} (
+                              {bk.payment_method === "transfer"
+                                ? "Chuyển khoản"
+                                : "Tiền mặt"}
+                              )
+                              {bk.payment_ref &&
+                                !bk.payment_ref.startsWith("MANUAL-") && (
+                                  <span className="font-mono text-[11px] text-muted">
+                                    · Ref: {bk.payment_ref}
+                                  </span>
+                                )}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdatePayment(bk, "unpaid")}
+                              className="inline-flex items-center gap-1 rounded-lg border border-zinc-700/80 px-2.5 py-1 text-[11px] text-muted hover:text-ivory"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              Hoàn tác chưa thu
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-xs text-muted">
+                              Xác nhận thu tiền ({formatVND(bk.total_price)}):
+                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdatePayment(bk, "paid", "cash")
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"
+                              >
+                                <Banknote className="h-3.5 w-3.5" />
+                                Đã nhận tiền mặt
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdatePayment(bk, "paid", "transfer")
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-gold-light hover:bg-gold hover:text-obsidian"
+                              >
+                                <CreditCard className="h-3.5 w-3.5" />
+                                Đã nhận chuyển khoản
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2087,6 +2264,106 @@ export function AdminDashboardClient({
           Lưu cấu hình mã QR
         </button>
       </div>
+
+      {/* Auto Bank Payment Confirmation (SePay Webhook) */}
+      <form
+        onSubmit={handleSaveSepayKey}
+        className="card-classic rounded-2xl p-5 sm:p-6 space-y-4"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+            <KeyRound className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="font-serif text-base font-bold text-ivory">
+              Tự Động Xác Nhận CK (SePay)
+            </h2>
+            <p className="text-xs text-muted">
+              Ngân hàng báo nhận tiền → tự đánh dấu Đã thanh toán
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted">
+            Webhook URL (dán vào SePay)
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={
+                webhookOrigin
+                  ? `${webhookOrigin}/api/webhooks/sepay`
+                  : "/api/webhooks/sepay"
+              }
+              className="w-full min-w-0 rounded-xl border border-border-subtle bg-obsidian px-3 py-2 font-mono text-[11px] text-ivory/90"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const url = `${webhookOrigin || ""}/api/webhooks/sepay`;
+                navigator.clipboard?.writeText(url);
+                setCopiedWebhook(true);
+                setTimeout(() => setCopiedWebhook(false), 1800);
+              }}
+              className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-gold/35 bg-gold/10 px-3 py-2 text-xs font-semibold text-gold-light hover:bg-gold hover:text-obsidian"
+            >
+              {copiedWebhook ? (
+                <Check className="h-3.5 w-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              {copiedWebhook ? "Đã copy" : "Copy"}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-muted">
+              SePay API Key (Header Authorization: Apikey)
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+                let rand = "ken_";
+                for (let i = 0; i < 24; i++) {
+                  rand += chars[Math.floor(Math.random() * chars.length)];
+                }
+                setSepayApiKey(rand);
+              }}
+              className="text-[11px] font-medium text-gold-light hover:underline"
+            >
+              Tạo key ngẫu nhiên
+            </button>
+          </div>
+          <input
+            type="text"
+            value={sepayApiKey}
+            onChange={(e) => setSepayApiKey(e.target.value)}
+            placeholder="Dán API Key trùng với cấu hình trên SePay..."
+            className="w-full rounded-xl border border-border-subtle bg-obsidian px-3.5 py-2.5 font-mono text-xs text-ivory focus:border-gold focus:outline-none"
+          />
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-obsidian/60 p-3 text-[11px] leading-relaxed text-muted space-y-1">
+          <p className="font-semibold text-ivory/90">Cách bật tự động trong 2 phút:</p>
+          <p>1. Đăng ký tài khoản miễn phí tại <strong className="text-gold-light">sepay.vn</strong> và liên kết STK ngân hàng.</p>
+          <p>2. Tạo Webhook mới → dán <strong>Webhook URL</strong> ở trên, chọn xác thực <strong>API Key</strong> và dán cùng chuỗi Key này.</p>
+          <p>3. Khách quét mã VietQR chuyển đủ tiền kèm mã <code className="text-ivory">KEN XXXX</code> → web tự động đổi sang <strong>Đã thanh toán</strong>!</p>
+        </div>
+
+        <button
+          type="submit"
+          disabled={savingSepay}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 py-2.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-40"
+        >
+          {savingSepay && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Lưu cấu hình SePay
+        </button>
+      </form>
 
       {/* Change Admin PIN Card */}
       <form

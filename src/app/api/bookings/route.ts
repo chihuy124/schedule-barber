@@ -47,8 +47,16 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get("date");
     const scope = searchParams.get("scope"); // "upcoming" | "all"
     const status = searchParams.get("status");
+    const paymentStatus = searchParams.get("paymentStatus"); // "paid" | "unpaid"
     const barberId = searchParams.get("barberId");
     const search = searchParams.get("search")?.trim();
+    const rawPage = Number(searchParams.get("page") || "1");
+    const rawPageSize = Number(searchParams.get("pageSize") || "20");
+    const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+    const pageSize =
+      Number.isInteger(rawPageSize) && rawPageSize > 0
+        ? Math.min(50, rawPageSize)
+        : 20;
 
     const conditions: string[] = [];
     const args: Array<string | number> = [];
@@ -64,6 +72,11 @@ export async function GET(request: NextRequest) {
       conditions.push("b.status = ?");
       args.push(status);
     }
+    if (paymentStatus === "paid" || paymentStatus === "unpaid") {
+      conditions.push("b.status NOT IN ('cancelled', 'no_show')");
+      conditions.push("b.payment_status = ?");
+      args.push(paymentStatus);
+    }
     if (barberId && barberId !== "all") {
       conditions.push("b.barber_id = ?");
       args.push(Number(barberId));
@@ -77,19 +90,48 @@ export async function GET(request: NextRequest) {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const orderBy =
       !date && scope === "all"
-        ? "ORDER BY b.date DESC, b.start_time DESC LIMIT 200"
-        : "ORDER BY b.date ASC, b.start_time ASC LIMIT 200";
+        ? "ORDER BY b.date DESC, b.start_time DESC"
+        : "ORDER BY b.date ASC, b.start_time ASC";
 
-    const res = await db.execute({
-      sql: `SELECT b.*, c.name as customer_name, c.phone as customer_phone,
-                   br.name as barber_name, br.title as barber_title
-            FROM bookings b
-            JOIN customers c ON c.id = b.customer_id
-            JOIN barbers br ON br.id = b.barber_id
-            ${where}
-            ${orderBy}`,
-      args,
-    });
+    const offset = (page - 1) * pageSize;
+
+    const [summaryRes, res] = await Promise.all([
+      db.execute({
+        sql: `SELECT
+                COUNT(*) as total,
+                COALESCE(SUM(CASE WHEN b.status NOT IN ('cancelled', 'no_show') THEN 1 ELSE 0 END), 0) as active_count,
+                COALESCE(SUM(CASE WHEN b.status = 'completed' THEN 1 ELSE 0 END), 0) as completed_count,
+                COALESCE(SUM(CASE WHEN b.status NOT IN ('cancelled', 'no_show') THEN b.total_price ELSE 0 END), 0) as estimated_revenue,
+                COALESCE(SUM(CASE WHEN b.payment_status = 'paid' AND b.status != 'cancelled' THEN b.total_price ELSE 0 END), 0) as collected_revenue,
+                COALESCE(SUM(CASE WHEN b.payment_status = 'paid' AND b.status != 'cancelled' THEN 1 ELSE 0 END), 0) as paid_count
+              FROM bookings b
+              JOIN customers c ON c.id = b.customer_id
+              ${where}`,
+        args,
+      }),
+      db.execute({
+        sql: `SELECT b.*, c.name as customer_name, c.phone as customer_phone,
+                     br.name as barber_name, br.title as barber_title
+              FROM bookings b
+              JOIN customers c ON c.id = b.customer_id
+              JOIN barbers br ON br.id = b.barber_id
+              ${where}
+              ${orderBy}
+              LIMIT ? OFFSET ?`,
+        args: [...args, pageSize, offset],
+      }),
+    ]);
+
+    const sRow = summaryRes.rows[0];
+    const total = Number(sRow?.total ?? 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const summary = {
+      activeCount: Number(sRow?.active_count ?? 0),
+      completedCount: Number(sRow?.completed_count ?? 0),
+      estimatedRevenue: Number(sRow?.estimated_revenue ?? 0),
+      collectedRevenue: Number(sRow?.collected_revenue ?? 0),
+      paidCount: Number(sRow?.paid_count ?? 0),
+    };
 
     const bookings = res.rows.map(mapBookingWithDetails);
 
@@ -120,7 +162,16 @@ export async function GET(request: NextRequest) {
       latest_hair_record: latestByCustomer.get(b.customer_id) ?? null,
     }));
 
-    return NextResponse.json({ bookings: enriched });
+    return NextResponse.json({
+      bookings: enriched,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+      },
+      summary,
+    });
   } catch (error) {
     console.error("GET /api/bookings error:", error);
     return NextResponse.json(

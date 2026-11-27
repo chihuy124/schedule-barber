@@ -29,6 +29,8 @@ import {
   CreditCard,
   RotateCcw,
   Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { buildVietQrUrl, VIETQR_BANKS } from "@/lib/vietqr";
@@ -103,12 +105,24 @@ export function AdminDashboardClient({
     useState<WorkingHour[]>(initialWorkingHours);
   const [timeOffs, setTimeOffs] = useState<TimeOff[]>(initialTimeOffs);
 
-  // Today / All Bookings Board state
+  // Today / All Bookings Board state (server-paginated: 20 items/page)
+  const PAGE_SIZE = 20;
   const [viewScope, setViewScope] = useState<"day" | "upcoming" | "all">("day");
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
+  const [page, setPage] = useState<number>(1);
+  const [totalBookings, setTotalBookings] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [bookingSummary, setBookingSummary] = useState({
+    activeCount: 0,
+    completedCount: 0,
+    estimatedRevenue: 0,
+    collectedRevenue: 0,
+    paidCount: 0,
+  });
   const [bookings, setBookings] = useState<BookingWithDetails[]>([]);
   const [liveChairByBarber, setLiveChairByBarber] = useState<
     Record<number, LiveChairBarberInfo>
@@ -223,14 +237,30 @@ export function AdminDashboardClient({
   };
 
   const fetchBookings = useCallback(
-    async (scope: "day" | "upcoming" | "all", date: string) => {
+    async (params: {
+      scope: "day" | "upcoming" | "all";
+      date: string;
+      pageNum: number;
+      status: string;
+      payment: string;
+      search: string;
+    }) => {
       setLoadingBookings(true);
       try {
-        const query =
-          scope === "day"
-            ? `date=${encodeURIComponent(date)}`
-            : `scope=${encodeURIComponent(scope)}`;
-        const res = await fetch(`/api/bookings?${query}`, {
+        const qs = new URLSearchParams({
+          page: String(params.pageNum),
+          pageSize: String(PAGE_SIZE),
+        });
+        if (params.scope === "day") {
+          qs.set("date", params.date);
+        } else {
+          qs.set("scope", params.scope);
+        }
+        if (params.status !== "all") qs.set("status", params.status);
+        if (params.payment !== "all") qs.set("paymentStatus", params.payment);
+        if (params.search.trim()) qs.set("search", params.search.trim());
+
+        const res = await fetch(`/api/bookings?${qs.toString()}`, {
           cache: "no-store",
         });
         if (res.status === 401) {
@@ -239,6 +269,11 @@ export function AdminDashboardClient({
         }
         const json = await res.json();
         setBookings(json.bookings ?? []);
+        setTotalBookings(json.pagination?.total ?? (json.bookings?.length ?? 0));
+        setTotalPages(json.pagination?.totalPages ?? 1);
+        if (json.summary) {
+          setBookingSummary(json.summary);
+        }
       } finally {
         setLoadingBookings(false);
       }
@@ -246,9 +281,34 @@ export function AdminDashboardClient({
     [router]
   );
 
+  // Debounce search input by 300ms to avoid firing API calls on every keystroke
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [searchQuery]);
+
   const reloadCurrentBookings = useCallback(
-    () => fetchBookings(viewScope, selectedDate),
-    [fetchBookings, viewScope, selectedDate]
+    () =>
+      fetchBookings({
+        scope: viewScope,
+        date: selectedDate,
+        pageNum: page,
+        status: statusFilter,
+        payment: paymentFilter,
+        search: debouncedSearch,
+      }),
+    [
+      fetchBookings,
+      viewScope,
+      selectedDate,
+      page,
+      statusFilter,
+      paymentFilter,
+      debouncedSearch,
+    ]
   );
 
   const refreshLiveChair = useCallback(async () => {
@@ -381,12 +441,7 @@ export function AdminDashboardClient({
       }),
     });
     if (res.ok) {
-      const json = await res.json();
-      setBookings((prev) =>
-        prev.map((b) =>
-          b.id === booking.id ? { ...b, ...json.booking } : b
-        )
-      );
+      await reloadCurrentBookings();
       showToast(
         paymentStatus === "paid"
           ? `Đã xác nhận thanh toán (${
@@ -910,43 +965,24 @@ export function AdminDashboardClient({
     }
   };
 
-  const filteredBookings = bookings.filter((bk) => {
-    if (statusFilter !== "all" && bk.status !== statusFilter) return false;
-    if (paymentFilter !== "all") {
-      if (bk.status === "cancelled" || bk.status === "no_show") return false;
-      if (bk.payment_status !== paymentFilter) return false;
-    }
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      const qDigits = q.replace(/\D/g, "");
-      const matchesName = bk.customer_name.toLowerCase().includes(q);
-      const matchesCode = bk.code.toLowerCase().includes(q);
-      const matchesPhone =
-        bk.customer_phone.toLowerCase().includes(q) ||
-        (qDigits.length > 0 && bk.customer_phone.includes(qDigits));
-      if (!matchesName && !matchesCode && !matchesPhone) return false;
-    }
-    return true;
-  });
-
-  // Summary metrics for current view
-  const activeBookings = filteredBookings.filter(
-    (b) => !["cancelled", "no_show"].includes(b.status)
-  );
-  const completedBookings = filteredBookings.filter(
-    (b) => b.status === "completed"
-  );
-  const estimatedRevenue = activeBookings.reduce(
-    (sum, b) => sum + b.total_price,
-    0
-  );
-  const collectedRevenue = filteredBookings
-    .filter((b) => b.payment_status === "paid" && b.status !== "cancelled")
-    .reduce((sum, b) => sum + b.total_price, 0);
-  const paidCount = filteredBookings.filter(
-    (b) => b.payment_status === "paid" && b.status !== "cancelled"
-  ).length;
+  // Summary metrics across ALL matching bookings (from server aggregation)
   const activeBarbers = barbers.filter((b) => b.is_active);
+  const pageStartItem = totalBookings === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageEndItem = Math.min(page * PAGE_SIZE, totalBookings);
+
+  const getVisiblePageNumbers = (): Array<number | "ellipsis"> => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const items: Array<number | "ellipsis"> = [1];
+    if (page > 3) items.push("ellipsis");
+    const start = Math.max(2, page - 1);
+    const end = Math.min(totalPages - 1, page + 1);
+    for (let p = start; p <= end; p++) items.push(p);
+    if (page < totalPages - 2) items.push("ellipsis");
+    items.push(totalPages);
+    return items;
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
@@ -1122,31 +1158,33 @@ export function AdminDashboardClient({
             <div className="rounded-2xl border border-border-subtle bg-charcoal p-4">
               <div className="text-xs text-muted">Lịch hoạt động</div>
               <div className="mt-1 font-serif text-2xl font-bold text-ivory">
-                {activeBookings.length}
+                {bookingSummary.activeCount}
               </div>
             </div>
             <div className="rounded-2xl border border-border-subtle bg-charcoal p-4">
               <div className="text-xs text-muted">Đã hoàn thành</div>
               <div className="mt-1 font-serif text-2xl font-bold text-emerald-300">
-                {completedBookings.length}
+                {bookingSummary.completedCount}
               </div>
             </div>
             <div className="rounded-2xl border border-border-subtle bg-charcoal p-4">
-              <div className="text-xs text-muted">Đã thu ({paidCount} đơn)</div>
+              <div className="text-xs text-muted">
+                Đã thu ({bookingSummary.paidCount} đơn)
+              </div>
               <div className="mt-1 font-serif text-2xl font-bold text-emerald-300">
-                {formatVND(collectedRevenue)}
+                {formatVND(bookingSummary.collectedRevenue)}
               </div>
               <div className="mt-0.5 text-[11px] text-muted">
-                Dự kiến: {formatVND(estimatedRevenue)}
+                Dự kiến: {formatVND(bookingSummary.estimatedRevenue)}
               </div>
             </div>
             <div className="rounded-2xl border border-border-subtle bg-charcoal p-4">
               <div className="text-xs text-muted">Đang xem</div>
               <div className="mt-1 text-sm font-semibold text-ivory">
                 {viewScope === "all"
-                  ? `Tất cả (${filteredBookings.length} lịch)`
+                  ? `Tất cả (${totalBookings} lịch)`
                   : viewScope === "upcoming"
-                    ? `Sắp tới (${filteredBookings.length} lịch)`
+                    ? `Sắp tới (${totalBookings} lịch)`
                     : formatDateVi(selectedDate, today)}
               </div>
             </div>
@@ -1161,6 +1199,7 @@ export function AdminDashboardClient({
                   onClick={() => {
                     setViewScope("day");
                     setSelectedDate(today);
+                    setPage(1);
                   }}
                   className={`rounded-xl border px-3.5 py-2 text-xs font-semibold ${
                     viewScope === "day" && selectedDate === today
@@ -1175,6 +1214,7 @@ export function AdminDashboardClient({
                   onClick={() => {
                     setViewScope("day");
                     setSelectedDate(addDaysToDate(today, 1));
+                    setPage(1);
                   }}
                   className={`rounded-xl border px-3.5 py-2 text-xs font-semibold ${
                     viewScope === "day" &&
@@ -1187,7 +1227,10 @@ export function AdminDashboardClient({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setViewScope("upcoming")}
+                  onClick={() => {
+                    setViewScope("upcoming");
+                    setPage(1);
+                  }}
                   className={`rounded-xl border px-3.5 py-2 text-xs font-semibold ${
                     viewScope === "upcoming"
                       ? "border-gold bg-gold text-obsidian"
@@ -1198,7 +1241,10 @@ export function AdminDashboardClient({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setViewScope("all")}
+                  onClick={() => {
+                    setViewScope("all");
+                    setPage(1);
+                  }}
                   className={`rounded-xl border px-3.5 py-2 text-xs font-semibold ${
                     viewScope === "all"
                       ? "border-gold bg-gold text-obsidian"
@@ -1213,6 +1259,7 @@ export function AdminDashboardClient({
                   onChange={(e) => {
                     setSelectedDate(e.target.value);
                     setViewScope("day");
+                    setPage(1);
                   }}
                   className="rounded-xl border border-border-subtle bg-charcoal px-3 py-1.5 text-xs text-ivory focus:border-gold focus:outline-none"
                 />
@@ -1241,7 +1288,10 @@ export function AdminDashboardClient({
               </div>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="rounded-xl border border-border-subtle bg-charcoal px-3 py-2 text-xs text-ivory focus:border-gold focus:outline-none sm:col-span-3"
               >
                 <option value="all">Tất cả trạng thái</option>
@@ -1254,7 +1304,10 @@ export function AdminDashboardClient({
               </select>
               <select
                 value={paymentFilter}
-                onChange={(e) => setPaymentFilter(e.target.value)}
+                onChange={(e) => {
+                  setPaymentFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="rounded-xl border border-border-subtle bg-charcoal px-3 py-2 text-xs text-ivory focus:border-gold focus:outline-none sm:col-span-3"
               >
                 <option value="all">Tất cả thanh toán</option>
@@ -1270,7 +1323,7 @@ export function AdminDashboardClient({
               <Loader2 className="mr-2 h-5 w-5 animate-spin text-gold" />
               Đang tải lịch hẹn...
             </div>
-          ) : filteredBookings.length === 0 ? (
+          ) : bookings.length === 0 ? (
             <div className="rounded-2xl border border-border-subtle bg-charcoal p-10 text-center space-y-3">
               <p className="text-sm text-muted">
                 {searchQuery || statusFilter !== "all" || paymentFilter !== "all"
@@ -1287,8 +1340,10 @@ export function AdminDashboardClient({
                     type="button"
                     onClick={() => {
                       setSearchQuery("");
+                      setDebouncedSearch("");
                       setStatusFilter("all");
                       setPaymentFilter("all");
+                      setPage(1);
                     }}
                     className="rounded-xl border border-border-subtle bg-surface px-4 py-2 text-xs font-medium text-ivory"
                   >
@@ -1307,7 +1362,7 @@ export function AdminDashboardClient({
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredBookings.map((bk) => {
+              {bookings.map((bk) => {
                 const meta = BOOKING_STATUS_META[bk.status];
                 return (
                   <div
@@ -1547,6 +1602,77 @@ export function AdminDashboardClient({
                   </div>
                 );
               })}
+
+              {/* Pagination Bar (20 items / page) */}
+              {totalBookings > 0 && (
+                <div className="flex flex-col items-center justify-between gap-3 rounded-2xl border border-border-subtle bg-charcoal/80 px-4 py-3 sm:flex-row">
+                  <div className="text-xs text-muted">
+                    Hiển thị{" "}
+                    <strong className="text-ivory">
+                      {pageStartItem}–{pageEndItem}
+                    </strong>{" "}
+                    / <strong className="text-gold-light">{totalBookings}</strong>{" "}
+                    lịch hẹn (20 / trang)
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={page <= 1}
+                        onClick={() => {
+                          setPage((p) => Math.max(1, p - 1));
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-xs font-medium text-ivory disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        Trước
+                      </button>
+
+                      {getVisiblePageNumbers().map((item, idx) =>
+                        item === "ellipsis" ? (
+                          <span
+                            key={`e-${idx}`}
+                            className="px-1.5 text-xs text-muted"
+                          >
+                            …
+                          </span>
+                        ) : (
+                          <button
+                            key={item}
+                            type="button"
+                            onClick={() => {
+                              setPage(item);
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            className={`min-w-[32px] rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                              item === page
+                                ? "border-gold bg-gold text-obsidian"
+                                : "border-border-subtle bg-surface text-ivory hover:border-gold/50"
+                            }`}
+                          >
+                            {item}
+                          </button>
+                        )
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={page >= totalPages}
+                        onClick={() => {
+                          setPage((p) => Math.min(totalPages, p + 1));
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-xs font-medium text-ivory disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Sau
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

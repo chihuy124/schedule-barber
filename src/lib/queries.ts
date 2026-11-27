@@ -382,23 +382,36 @@ export async function getQuickRebookSlots(params: {
 export async function getLiveChairSummary(): Promise<LiveChairSummary> {
   const db = await getDb();
   const now = getShopNow();
-  const activeBarbers = await getActiveBarbers();
 
-  const whRes = await db.execute({
-    sql: "SELECT * FROM working_hours WHERE day_of_week = ?",
-    args: [now.dayOfWeek],
-  });
+  // Fetch all required data in parallel (single round-trip batch, zero N+1 queries)
+  const [activeBarbers, settings, whRes, todayOffsRes, todayBookingsRes] =
+    await Promise.all([
+      getActiveBarbers(),
+      getShopSettings(),
+      db.execute({
+        sql: "SELECT * FROM working_hours WHERE day_of_week = ?",
+        args: [now.dayOfWeek],
+      }),
+      db.execute({
+        sql: "SELECT barber_id, start_time, end_time FROM time_offs WHERE date = ?",
+        args: [now.date],
+      }),
+      db.execute({
+        sql: `SELECT * FROM bookings
+              WHERE date = ? AND status IN ('confirmed', 'arrived', 'in_progress')
+              ORDER BY start_time ASC`,
+        args: [now.date],
+      }),
+    ]);
 
   const wh = whRes.rows[0];
   const openTime = wh ? String(wh.open_time) : "08:30";
   const closeTime = wh ? String(wh.close_time) : "20:30";
   const isDayOpen = wh ? Number(wh.is_open) === 1 : true;
+  const openMin = timeToMinutes(openTime);
+  const closeMin = timeToMinutes(closeTime);
+  const slotInterval = settings.slot_interval_minutes || 30;
 
-  // Check time-offs for today (shop-wide + per-barber)
-  const todayOffsRes = await db.execute({
-    sql: "SELECT barber_id, start_time, end_time FROM time_offs WHERE date = ?",
-    args: [now.date],
-  });
   const todayOffs = todayOffsRes.rows.map((r) => ({
     barber_id: r.barber_id ? Number(r.barber_id) : null,
     start: r.start_time ? timeToMinutes(String(r.start_time)) : 0,
@@ -412,16 +425,9 @@ export async function getLiveChairSummary(): Promise<LiveChairSummary> {
   const withinHours =
     isDayOpen &&
     !isShopOffNow &&
-    now.minutes >= timeToMinutes(openTime) &&
-    now.minutes < timeToMinutes(closeTime);
+    now.minutes >= openMin &&
+    now.minutes < closeMin;
 
-  // Get today's active/waiting bookings
-  const todayBookingsRes = await db.execute({
-    sql: `SELECT * FROM bookings
-          WHERE date = ? AND status IN ('confirmed', 'arrived', 'in_progress')
-          ORDER BY start_time ASC`,
-    args: [now.date],
-  });
   const todayBookings: Booking[] = todayBookingsRes.rows.map((r) => ({
     id: Number(r.id),
     code: String(r.code),
@@ -515,12 +521,32 @@ export async function getLiveChairSummary(): Promise<LiveChairSummary> {
       }
     }
 
-    const { slots } = await getAvailableSlots({
-      date: now.date,
-      durationMinutes: 30,
-      barberId: b.id,
-    });
-    const nextSlot = slots.find((s) => s.available)?.time ?? null;
+    // Compute earliest 30-min open slot today directly in-memory (no extra DB queries!)
+    let nextSlot: string | null = null;
+    if (isDayOpen) {
+      const minStartToday = now.minutes + 15;
+      for (let start = openMin; start + 30 <= closeMin; start += slotInterval) {
+        if (start < minStartToday) continue;
+        const end = start + 30;
+        const blockedByOff = todayOffs.some(
+          (off) =>
+            (off.barber_id === null || off.barber_id === b.id) &&
+            intervalsOverlap(start, end, off.start, off.end)
+        );
+        if (blockedByOff) continue;
+        const blockedByBooking = bBookings.some((bk) =>
+          intervalsOverlap(
+            start,
+            end,
+            timeToMinutes(bk.start_time),
+            timeToMinutes(bk.end_time)
+          )
+        );
+        if (blockedByBooking) continue;
+        nextSlot = minutesToTime(start);
+        break;
+      }
+    }
 
     barberInfos.push({
       id: b.id,

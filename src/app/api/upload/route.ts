@@ -12,7 +12,9 @@ const ALLOWED_TYPES: Record<string, string> = {
   "image/webp": ".webp",
 };
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB
+// Keep uploads compact (client compresses phone photos to ~50-90 KB before sending)
+const MAX_LOCAL_BYTES = 5 * 1024 * 1024;
+const MAX_INLINE_BYTES = 450 * 1024; // 450 KB max for Vercel/Turso inline data URL
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,9 +40,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (file.size > MAX_BYTES) {
+    const useInlineStorage =
+      Boolean(process.env.VERCEL) ||
+      Boolean(process.env.DATABASE_URL?.startsWith("libsql://")) ||
+      process.env.STORAGE_MODE === "inline";
+
+    const maxBytes = useInlineStorage ? MAX_INLINE_BYTES : MAX_LOCAL_BYTES;
+    if (file.size > maxBytes) {
       return NextResponse.json(
-        { error: "Ảnh vượt quá dung lượng tối đa 5MB." },
+        {
+          error: useInlineStorage
+            ? "Ảnh sau khi nén vẫn lớn hơn 450KB. Vui lòng chọn ảnh nhẹ hơn."
+            : "Ảnh vượt quá dung lượng tối đa 5MB.",
+        },
         { status: 400 }
       );
     }
@@ -48,10 +60,16 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
+    // On Vercel Serverless (read-only filesystem) or remote Turso DB, return compact data URL
+    if (useInlineStorage) {
+      const dataUrl = `data:${file.type};base64,${buffer.toString("base64")}`;
+      return NextResponse.json({ url: dataUrl }, { status: 201 });
+    }
+
     const uploadsDir = path.join(process.cwd(), "public", "uploads");
     await fs.mkdir(uploadsDir, { recursive: true });
 
-    const filename = `hair-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${ext}`;
+    const filename = `img-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${ext}`;
     const fullPath = path.join(uploadsDir, filename);
     await fs.writeFile(fullPath, buffer);
 

@@ -7,7 +7,10 @@ export async function GET() {
   try {
     const summary = await getLiveChairSummary();
     return NextResponse.json(summary, {
-      headers: { "Cache-Control": "no-store" },
+      headers: {
+        // Share Edge cache across concurrent visitors for 30s to minimize Vercel Function invocations
+        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=30",
+      },
     });
   } catch (error) {
     console.error("GET /api/live-chair error:", error);

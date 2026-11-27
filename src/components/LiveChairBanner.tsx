@@ -15,8 +15,9 @@ export function LiveChairBanner({ initialData }: Props) {
   useEffect(() => {
     let active = true;
     const poll = async () => {
+      if (document.visibilityState !== "visible") return;
       try {
-        const res = await fetch("/api/live-chair", { cache: "no-store" });
+        const res = await fetch("/api/live-chair");
         if (!res.ok) return;
         const json = (await res.json()) as LiveChairSummary;
         if (active) setData(json);
@@ -25,10 +26,19 @@ export function LiveChairBanner({ initialData }: Props) {
       }
     };
 
-    const id = setInterval(poll, 15000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        poll();
+      }
+    };
+
+    // Poll every 60s only while tab is visible (saves ~80% Vercel requests)
+    const id = setInterval(poll, 60000);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       active = false;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 

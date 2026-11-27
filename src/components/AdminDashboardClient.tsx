@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { buildVietQrUrl, VIETQR_BANKS } from "@/lib/vietqr";
+import { compressImageFile } from "@/lib/image-compress";
 import type {
   Barber,
   BarberLiveStatus,
@@ -250,8 +251,17 @@ export function AdminDashboardClient({
 
   useEffect(() => {
     refreshLiveChair();
-    const id = setInterval(refreshLiveChair, 20000);
-    return () => clearInterval(id);
+    const pollIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        refreshLiveChair();
+      }
+    };
+    const id = setInterval(pollIfVisible, 60000);
+    document.addEventListener("visibilitychange", pollIfVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", pollIfVisible);
+    };
   }, [refreshLiveChair]);
 
   const handleLogout = async () => {
@@ -379,8 +389,12 @@ export function AdminDashboardClient({
     if (!file) return;
     setUploadingPhoto(true);
     try {
+      const optimized = await compressImageFile(file, {
+        maxDimension: 900,
+        quality: 0.78,
+      });
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", optimized);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const json = await res.json();
       if (res.ok && json.url) {
@@ -699,8 +713,12 @@ export function AdminDashboardClient({
     if (!file) return;
     setUploadingQr(true);
     try {
+      const optimized = await compressImageFile(file, {
+        maxDimension: 720,
+        quality: 0.85,
+      });
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", optimized);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok || !json.url) {

@@ -28,7 +28,7 @@ const patchSettingsSchema = z.object({
   payment_bank_bin: z.string().trim().max(20).nullable().optional(),
   payment_account_no: z.string().trim().max(40).nullable().optional(),
   payment_account_name: z.string().trim().max(120).nullable().optional(),
-  payment_qr_url: z.string().trim().max(500).nullable().optional(),
+  payment_qr_url: z.string().trim().max(650000).nullable().optional(),
   payment_note: z.string().trim().max(250).nullable().optional(),
   new_pin: z
     .string()

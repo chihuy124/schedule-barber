@@ -40,9 +40,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const remoteDbUrl =
+      process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || "";
     const useInlineStorage =
       Boolean(process.env.VERCEL) ||
-      Boolean(process.env.DATABASE_URL?.startsWith("libsql://")) ||
+      remoteDbUrl.startsWith("libsql://") ||
       process.env.STORAGE_MODE === "inline";
 
     const maxBytes = useInlineStorage ? MAX_INLINE_BYTES : MAX_LOCAL_BYTES;

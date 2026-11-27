@@ -9,8 +9,10 @@ const globalForDb = globalThis as unknown as {
 };
 
 function getDbUrl(): string {
-  if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL;
+  const remoteUrl =
+    process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
+  if (remoteUrl) {
+    return remoteUrl;
   }
   const dataDir = path.join(process.cwd(), "data");
   if (!fs.existsSync(dataDir)) {
@@ -24,7 +26,8 @@ export function getDbClient(): Client {
     const url = getDbUrl();
     globalForDb.libsqlClient = createClient({
       url,
-      authToken: process.env.DATABASE_AUTH_TOKEN,
+      authToken:
+        process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN,
     });
   }
   return globalForDb.libsqlClient;

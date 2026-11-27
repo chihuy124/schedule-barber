@@ -10,6 +10,7 @@ import {
 } from "@/lib/queries";
 import {
   generateBookingCode,
+  getShopNow,
   isValidVietnamesePhone,
   minutesToTime,
   normalizePhone,
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
+    const scope = searchParams.get("scope"); // "upcoming" | "all"
     const status = searchParams.get("status");
     const barberId = searchParams.get("barberId");
     const search = searchParams.get("search")?.trim();
@@ -54,6 +56,9 @@ export async function GET(request: NextRequest) {
     if (date) {
       conditions.push("b.date = ?");
       args.push(date);
+    } else if (scope === "upcoming") {
+      conditions.push("b.date >= ?");
+      args.push(getShopNow().date);
     }
     if (status && status !== "all") {
       conditions.push("b.status = ?");
@@ -70,6 +75,10 @@ export async function GET(request: NextRequest) {
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const orderBy =
+      !date && scope === "all"
+        ? "ORDER BY b.date DESC, b.start_time DESC LIMIT 200"
+        : "ORDER BY b.date ASC, b.start_time ASC LIMIT 200";
 
     const res = await db.execute({
       sql: `SELECT b.*, c.name as customer_name, c.phone as customer_phone,
@@ -78,7 +87,7 @@ export async function GET(request: NextRequest) {
             JOIN customers c ON c.id = b.customer_id
             JOIN barbers br ON br.id = b.barber_id
             ${where}
-            ORDER BY b.date ASC, b.start_time ASC`,
+            ${orderBy}`,
       args,
     });
 

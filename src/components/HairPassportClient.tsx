@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { LinkSpinner } from "@/components/LinkSpinner";
 import {
@@ -15,6 +15,10 @@ import {
   Loader2,
   Award,
   Camera,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  ZoomIn,
 } from "lucide-react";
 import type { CustomerLookupResponse } from "@/lib/types";
 import {
@@ -34,6 +38,46 @@ export function HairPassportClient({ today }: { today: string }) {
   const [data, setData] = useState<CustomerLookupResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Full-screen photo lightbox gallery state
+  const [lightbox, setLightbox] = useState<{
+    photos: string[];
+    index: number;
+    title: string;
+    subtitle?: string;
+  } | null>(null);
+  const touchStartX = useRef<number | null>(null);
+
+  // Keyboard navigation for lightbox (Esc / Left / Right)
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setLightbox(null);
+      } else if (e.key === "ArrowLeft" && lightbox.photos.length > 1) {
+        setLightbox((prev) =>
+          prev
+            ? {
+                ...prev,
+                index:
+                  (prev.index - 1 + prev.photos.length) % prev.photos.length,
+              }
+            : null
+        );
+      } else if (e.key === "ArrowRight" && lightbox.photos.length > 1) {
+        setLightbox((prev) =>
+          prev
+            ? {
+                ...prev,
+                index: (prev.index + 1) % prev.photos.length,
+              }
+            : null
+        );
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightbox]);
 
   const runLookup = async (phone: string) => {
     setLoading(true);
@@ -297,16 +341,69 @@ export function HairPassportClient({ today }: { today: string }) {
                       className="card-classic flex flex-col overflow-hidden rounded-2xl"
                     >
                       {rec.photo_urls.length > 0 && (
-                        <div className="relative aspect-[4/3.6] overflow-hidden bg-obsidian">
-                          <img
-                            src={rec.photo_urls[0]}
-                            alt={rec.style_name}
-                            className="h-full w-full object-cover"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-transparent to-transparent" />
-                          <div className="absolute left-3 top-3 rounded-full border border-gold/30 bg-obsidian/80 px-3 py-1 text-[11px] font-medium text-ivory backdrop-blur">
-                            {formatDateVi(rec.cut_date, today)}
-                          </div>
+                        <div className="bg-obsidian">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLightbox({
+                                photos: rec.photo_urls,
+                                index: 0,
+                                title: rec.style_name,
+                                subtitle: formatDateVi(rec.cut_date, today),
+                              })
+                            }
+                            aria-label={`Xem ảnh kiểu tóc ${rec.style_name}`}
+                            className="group relative block aspect-[4/3.6] w-full overflow-hidden bg-obsidian text-left"
+                          >
+                            <img
+                              src={rec.photo_urls[0]}
+                              alt={rec.style_name}
+                              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-obsidian via-transparent to-transparent" />
+                            <div className="absolute left-3 top-3 rounded-full border border-gold/30 bg-obsidian/80 px-3 py-1 text-[11px] font-medium text-ivory backdrop-blur">
+                              {formatDateVi(rec.cut_date, today)}
+                            </div>
+                            <div className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-gold/30 bg-obsidian/80 px-2.5 py-1 text-[11px] font-medium text-gold-light backdrop-blur">
+                              <ZoomIn className="h-3 w-3" />
+                              {rec.photo_urls.length > 1
+                                ? `${rec.photo_urls.length} ảnh`
+                                : "Xem lớn"}
+                            </div>
+                          </button>
+
+                          {rec.photo_urls.length > 1 && (
+                            <div className="flex gap-2 overflow-x-auto border-t border-white/5 bg-obsidian/90 px-3 py-2.5">
+                              {rec.photo_urls.map((url, idx) => (
+                                <button
+                                  key={`${rec.id}-thumb-${idx}`}
+                                  type="button"
+                                  onClick={() =>
+                                    setLightbox({
+                                      photos: rec.photo_urls,
+                                      index: idx,
+                                      title: rec.style_name,
+                                      subtitle: formatDateVi(
+                                        rec.cut_date,
+                                        today
+                                      ),
+                                    })
+                                  }
+                                  aria-label={`Xem ảnh ${idx + 1} của ${rec.style_name}`}
+                                  className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gold/25 bg-charcoal transition hover:border-gold"
+                                >
+                                  <img
+                                    src={url}
+                                    alt={`${rec.style_name} - góc ${idx + 1}`}
+                                    className="h-full w-full object-cover"
+                                  />
+                                  <span className="absolute bottom-0.5 right-0.5 rounded bg-black/75 px-1 text-[9px] font-semibold text-ivory">
+                                    {idx + 1}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -411,6 +508,152 @@ export function HairPassportClient({ today }: { today: string }) {
                 })}
               </div>
             </section>
+          )}
+        </div>
+      )}
+      {/* FULL-SCREEN PHOTO LIGHTBOX */}
+      {lightbox && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightbox.title}
+          onClick={() => setLightbox(null)}
+          onTouchStart={(e) => {
+            touchStartX.current = e.touches[0]?.clientX ?? null;
+          }}
+          onTouchEnd={(e) => {
+            if (touchStartX.current === null || lightbox.photos.length <= 1) {
+              return;
+            }
+            const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
+            const delta = endX - touchStartX.current;
+            touchStartX.current = null;
+            if (Math.abs(delta) < 40) return;
+            setLightbox((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    index:
+                      delta > 0
+                        ? (prev.index - 1 + prev.photos.length) %
+                          prev.photos.length
+                        : (prev.index + 1) % prev.photos.length,
+                  }
+                : null
+            );
+          }}
+          className="fixed inset-0 z-[70] flex flex-col justify-between bg-black/95 p-4 backdrop-blur-md"
+        >
+          {/* Top bar */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="mx-auto flex w-full max-w-4xl items-center justify-between gap-3"
+          >
+            <div className="min-w-0">
+              <div className="truncate font-serif text-base font-bold text-ivory sm:text-lg">
+                {lightbox.title}
+              </div>
+              <div className="text-xs text-muted">
+                {lightbox.subtitle && <span>{lightbox.subtitle} · </span>}
+                Ảnh{" "}
+                <strong className="text-gold-light">
+                  {lightbox.index + 1}/{lightbox.photos.length}
+                </strong>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLightbox(null)}
+              aria-label="Đóng xem ảnh"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-charcoal/90 text-ivory hover:border-gold hover:text-gold-light"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Center image + prev/next controls */}
+          <div className="relative mx-auto my-3 flex w-full max-w-4xl flex-1 items-center justify-center overflow-hidden">
+            {lightbox.photos.length > 1 && (
+              <button
+                type="button"
+                aria-label="Ảnh trước"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightbox((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          index:
+                            (prev.index - 1 + prev.photos.length) %
+                            prev.photos.length,
+                        }
+                      : null
+                  );
+                }}
+                className="absolute left-1 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/70 text-ivory backdrop-blur hover:border-gold hover:text-gold-light sm:left-3"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            )}
+
+            <img
+              src={lightbox.photos[lightbox.index]}
+              alt={`${lightbox.title} - ảnh ${lightbox.index + 1}`}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[72vh] max-w-full rounded-2xl border border-gold/20 object-contain shadow-2xl"
+            />
+
+            {lightbox.photos.length > 1 && (
+              <button
+                type="button"
+                aria-label="Ảnh tiếp theo"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightbox((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          index: (prev.index + 1) % prev.photos.length,
+                        }
+                      : null
+                  );
+                }}
+                className="absolute right-1 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/70 text-ivory backdrop-blur hover:border-gold hover:text-gold-light sm:right-3"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            )}
+          </div>
+
+          {/* Bottom thumbnails */}
+          {lightbox.photos.length > 1 ? (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="mx-auto flex max-w-full items-center gap-2 overflow-x-auto pb-1"
+            >
+              {lightbox.photos.map((url, idx) => (
+                <button
+                  key={`lb-thumb-${idx}`}
+                  type="button"
+                  onClick={() =>
+                    setLightbox((prev) => (prev ? { ...prev, index: idx } : null))
+                  }
+                  className={`h-14 w-14 shrink-0 overflow-hidden rounded-xl border-2 transition ${
+                    idx === lightbox.index
+                      ? "border-gold ring-2 ring-gold/40"
+                      : "border-white/15 opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  <img
+                    src={url}
+                    alt={`Ảnh ${idx + 1}`}
+                    className="h-full w-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="h-2" />
           )}
         </div>
       )}

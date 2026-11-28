@@ -63,7 +63,7 @@ export function BookingDetailClient({
   const [newTime, setNewTime] = useState("");
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState<"cancel" | "reschedule" | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     text: string;
@@ -155,7 +155,7 @@ export function BookingDetailClient({
 
   const handleCancel = async () => {
     if (!window.confirm("Bạn chắc chắn muốn hủy lịch hẹn này?")) return;
-    setSaving(true);
+    setSavingAction("cancel");
     setFeedback(null);
     try {
       const res = await fetch(`/api/bookings/${booking.code}`, {
@@ -172,13 +172,13 @@ export function BookingDetailClient({
       setShowReschedule(false);
       setFeedback({ type: "success", text: "Đã hủy lịch hẹn thành công." });
     } finally {
-      setSaving(false);
+      setSavingAction(null);
     }
   };
 
   const handleConfirmReschedule = async () => {
     if (!newTime) return;
-    setSaving(true);
+    setSavingAction("reschedule");
     setFeedback(null);
     try {
       const res = await fetch(`/api/bookings/${booking.code}`, {
@@ -204,7 +204,7 @@ export function BookingDetailClient({
         )}.`,
       });
     } finally {
-      setSaving(false);
+      setSavingAction(null);
     }
   };
 
@@ -510,11 +510,15 @@ export function BookingDetailClient({
               </button>
               <button
                 type="button"
-                disabled={saving}
+                disabled={savingAction !== null}
                 onClick={handleCancel}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 disabled:opacity-50"
               >
-                <XCircle className="h-3.5 w-3.5" />
+                {savingAction === "cancel" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <XCircle className="h-3.5 w-3.5" />
+                )}
                 Hủy lịch hẹn
               </button>
             </div>
@@ -579,11 +583,13 @@ export function BookingDetailClient({
 
               <button
                 type="button"
-                disabled={!newTime || saving}
+                disabled={!newTime || savingAction !== null}
                 onClick={handleConfirmReschedule}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gold py-2.5 text-sm font-semibold text-obsidian disabled:opacity-40"
               >
-                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {savingAction === "reschedule" && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
                 Xác nhận đổi sang {newTime || "..."}
               </button>
             </div>

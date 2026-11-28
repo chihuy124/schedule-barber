@@ -10,16 +10,13 @@ import {
   Plus,
   LogOut,
   CheckCircle2,
-  Play,
   UserPlus,
-  Sparkles,
   Camera,
   X,
   Loader2,
   Trash2,
   Radio,
   Ban,
-  Check,
   Upload,
   Store,
   Lock,
@@ -31,6 +28,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Pencil,
 } from "lucide-react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { buildVietQrUrl, VIETQR_BANKS } from "@/lib/vietqr";
@@ -129,6 +127,25 @@ export function AdminDashboardClient({
   >({});
   const [loadingBookings, setLoadingBookings] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
+
+  const isPending = (key: string) => Boolean(pendingKeys[key]);
+  const isAnyPendingWithPrefix = (prefix: string) =>
+    Object.keys(pendingKeys).some((k) => k.startsWith(prefix) && pendingKeys[k]);
+
+  const runWithPending = async (key: string, fn: () => Promise<void>) => {
+    if (pendingKeys[key]) return;
+    setPendingKeys((prev) => ({ ...prev, [key]: true }));
+    try {
+      await fn();
+    } finally {
+      setPendingKeys((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
 
   // Walk-in Modal state
   const [showWalkIn, setShowWalkIn] = useState(false);
@@ -163,6 +180,14 @@ export function AdminDashboardClient({
   const [newSvcDuration, setNewSvcDuration] = useState(30);
   const [newSvcPrice, setNewSvcPrice] = useState(120000);
   const [savingSvc, setSavingSvc] = useState(false);
+
+  // Edit Service modal state
+  const [editingService, setEditingService] = useState<Service | null>(null);
+  const [editSvcName, setEditSvcName] = useState("");
+  const [editSvcDesc, setEditSvcDesc] = useState("");
+  const [editSvcDuration, setEditSvcDuration] = useState(30);
+  const [editSvcPrice, setEditSvcPrice] = useState(0);
+  const [editSvcError, setEditSvcError] = useState<string | null>(null);
 
   // New Barber form
   const [newBarberName, setNewBarberName] = useState("");
@@ -208,7 +233,6 @@ export function AdminDashboardClient({
     initialSettings.payment_note ?? ""
   );
   const [uploadingQr, setUploadingQr] = useState(false);
-  const [savingQr, setSavingQr] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Admin PIN state
@@ -220,7 +244,6 @@ export function AdminDashboardClient({
   const [offStart, setOffStart] = useState("12:00");
   const [offEnd, setOffEnd] = useState("14:00");
   const [offReason, setOffReason] = useState("Nghỉ đột xuất");
-  const [savingSchedule, setSavingSchedule] = useState(false);
 
   // Confirm Delete / Reset Modal state
   const [confirmAction, setConfirmAction] = useState<
@@ -357,8 +380,10 @@ export function AdminDashboardClient({
   }, [refreshLiveChair]);
 
   const handleLogout = async () => {
-    await fetch("/api/admin/auth", { method: "DELETE" });
-    router.refresh();
+    await runWithPending("logout", async () => {
+      await fetch("/api/admin/auth", { method: "DELETE" });
+      router.refresh();
+    });
   };
 
   // Update barber Live Chair status directly
@@ -367,37 +392,39 @@ export function AdminDashboardClient({
     status: BarberLiveStatus,
     addMinutes?: number
   ) => {
-    const nowMinutes = getShopNow().minutes;
-    const estimated_free_at =
-      status === "busy" && addMinutes
-        ? minutesToTime(nowMinutes + addMinutes)
-        : status === "busy"
-          ? minutesToTime(nowMinutes + 30)
-          : null;
-
-    const res = await fetch("/api/admin/barbers", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: barberId,
-        current_status: status,
-        estimated_free_at,
-      }),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      setBarbers((prev) =>
-        prev.map((b) => (b.id === barberId ? json.barber : b))
-      );
-      await refreshLiveChair();
-      showToast(
-        status === "available"
-          ? "Live Chair: Đã chuyển sang ĐANG TRỐNG"
+    await runWithPending(`chair:${barberId}:${status}`, async () => {
+      const nowMinutes = getShopNow().minutes;
+      const estimated_free_at =
+        status === "busy" && addMinutes
+          ? minutesToTime(nowMinutes + addMinutes)
           : status === "busy"
-            ? `Live Chair: ĐANG CẮT (dự kiến xong ${estimated_free_at})`
-            : "Live Chair: Đã chuyển sang TẠM NGHỈ"
-      );
-    }
+            ? minutesToTime(nowMinutes + 30)
+            : null;
+
+      const res = await fetch("/api/admin/barbers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: barberId,
+          current_status: status,
+          estimated_free_at,
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setBarbers((prev) =>
+          prev.map((b) => (b.id === barberId ? json.barber : b))
+        );
+        await refreshLiveChair();
+        showToast(
+          status === "available"
+            ? "Live Chair: Đã chuyển sang ĐANG TRỐNG"
+            : status === "busy"
+              ? `Live Chair: ĐANG CẮT (dự kiến xong ${estimated_free_at})`
+              : "Live Chair: Đã chuyển sang TẠM NGHỈ"
+        );
+      }
+    });
   };
 
   // Progress booking status
@@ -405,25 +432,29 @@ export function AdminDashboardClient({
     booking: BookingWithDetails,
     status: BookingStatus
   ) => {
-    const res = await fetch(`/api/bookings/${booking.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+    await runWithPending(`status:${booking.id}:${status}`, async () => {
+      const res = await fetch(`/api/bookings/${booking.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        await Promise.all([reloadCurrentBookings(), refreshBarbers()]);
+        const released =
+          status === "no_show" ||
+          status === "cancelled" ||
+          status === "completed";
+        showToast(
+          released
+            ? `${booking.customer_name} → ${
+                BOOKING_STATUS_META[status]?.label ?? status
+              } (Đã nhả lịch & trống ghế)`
+            : `Đã cập nhật ${booking.customer_name} → ${
+                BOOKING_STATUS_META[status]?.label ?? status
+              }`
+        );
+      }
     });
-    if (res.ok) {
-      await Promise.all([reloadCurrentBookings(), refreshBarbers()]);
-      const released =
-        status === "no_show" || status === "cancelled" || status === "completed";
-      showToast(
-        released
-          ? `${booking.customer_name} → ${
-              BOOKING_STATUS_META[status]?.label ?? status
-            } (Đã nhả lịch & trống ghế)`
-          : `Đã cập nhật ${booking.customer_name} → ${
-              BOOKING_STATUS_META[status]?.label ?? status
-            }`
-      );
-    }
   };
 
   // Manual payment confirmation / undo
@@ -432,24 +463,28 @@ export function AdminDashboardClient({
     paymentStatus: PaymentStatus,
     paymentMethod?: PaymentMethod
   ) => {
-    const res = await fetch(`/api/bookings/${booking.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        payment_status: paymentStatus,
-        payment_method: paymentStatus === "paid" ? paymentMethod ?? "cash" : null,
-      }),
+    const key = `pay:${booking.id}:${paymentStatus}:${paymentMethod ?? "none"}`;
+    await runWithPending(key, async () => {
+      const res = await fetch(`/api/bookings/${booking.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payment_status: paymentStatus,
+          payment_method:
+            paymentStatus === "paid" ? paymentMethod ?? "cash" : null,
+        }),
+      });
+      if (res.ok) {
+        await reloadCurrentBookings();
+        showToast(
+          paymentStatus === "paid"
+            ? `Đã xác nhận thanh toán (${
+                paymentMethod === "transfer" ? "Chuyển khoản" : "Tiền mặt"
+              }) — ${booking.customer_name}`
+            : `Đã chuyển về Chưa thanh toán — ${booking.customer_name}`
+        );
+      }
     });
-    if (res.ok) {
-      await reloadCurrentBookings();
-      showToast(
-        paymentStatus === "paid"
-          ? `Đã xác nhận thanh toán (${
-              paymentMethod === "transfer" ? "Chuyển khoản" : "Tiền mặt"
-            }) — ${booking.customer_name}`
-          : `Đã chuyển về Chưa thanh toán — ${booking.customer_name}`
-      );
-    }
   };
 
   // Create Walk-in booking
@@ -588,22 +623,78 @@ export function AdminDashboardClient({
   };
 
   const handleToggleService = async (svc: Service) => {
-    const res = await fetch("/api/admin/services", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: svc.id, is_active: !svc.is_active }),
+    await runWithPending(`toggle-svc:${svc.id}`, async () => {
+      const res = await fetch("/api/admin/services", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: svc.id, is_active: !svc.is_active }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setServices((prev) =>
+          prev.map((s) => (s.id === svc.id ? json.service : s))
+        );
+        showToast(
+          json.service.is_active
+            ? `Đã bật dịch vụ "${svc.name}"`
+            : `Đã ẩn dịch vụ "${svc.name}"`
+        );
+      }
     });
-    if (res.ok) {
-      const json = await res.json();
-      setServices((prev) =>
-        prev.map((s) => (s.id === svc.id ? json.service : s))
-      );
-      showToast(
-        json.service.is_active
-          ? `Đã bật dịch vụ "${svc.name}"`
-          : `Đã ẩn dịch vụ "${svc.name}"`
-      );
+  };
+
+  const openEditServiceModal = (svc: Service) => {
+    setEditingService(svc);
+    setEditSvcName(svc.name);
+    setEditSvcDesc(svc.description ?? "");
+    setEditSvcDuration(svc.duration_minutes);
+    setEditSvcPrice(svc.price);
+    setEditSvcError(null);
+  };
+
+  const handleUpdateService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingService) return;
+    const trimmedName = editSvcName.trim();
+    if (trimmedName.length < 2) {
+      setEditSvcError("Tên dịch vụ phải có ít nhất 2 ký tự.");
+      return;
     }
+    const parsedDuration = Math.round(Number(editSvcDuration));
+    if (!Number.isFinite(parsedDuration) || parsedDuration < 10 || parsedDuration > 240) {
+      setEditSvcError("Thời lượng phải từ 10 đến 240 phút.");
+      return;
+    }
+    const parsedPrice = Math.round(Number(editSvcPrice));
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      setEditSvcError("Giá dịch vụ không hợp lệ.");
+      return;
+    }
+    setEditSvcError(null);
+
+    await runWithPending("edit-svc", async () => {
+      const res = await fetch("/api/admin/services", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingService.id,
+          name: trimmedName,
+          description: editSvcDesc.trim(),
+          duration_minutes: parsedDuration,
+          price: parsedPrice,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setEditSvcError(json.error || "Không thể cập nhật dịch vụ.");
+        return;
+      }
+      setServices((prev) =>
+        prev.map((s) => (s.id === editingService.id ? json.service : s))
+      );
+      setEditingService(null);
+      showToast(`Đã cập nhật dịch vụ "${json.service.name}".`);
+    });
   };
 
   // Add Barber
@@ -637,24 +728,25 @@ export function AdminDashboardClient({
   };
 
   const handleToggleBarberActive = async (barber: Barber) => {
-    const res = await fetch("/api/admin/barbers", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: barber.id, is_active: !barber.is_active }),
+    await runWithPending(`toggle-barber:${barber.id}`, async () => {
+      const res = await fetch("/api/admin/barbers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: barber.id, is_active: !barber.is_active }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setBarbers((prev) =>
+          prev.map((b) => (b.id === barber.id ? json.barber : b))
+        );
+        showToast("Đã cập nhật trạng thái hoạt động của thợ.");
+      }
     });
-    if (res.ok) {
-      const json = await res.json();
-      setBarbers((prev) =>
-        prev.map((b) => (b.id === barber.id ? json.barber : b))
-      );
-      showToast("Đã cập nhật trạng thái hoạt động của thợ.");
-    }
   };
 
   // Working Hours & Time-offs
   const handleSaveWorkingHours = async () => {
-    setSavingSchedule(true);
-    try {
+    await runWithPending("save-hours", async () => {
       const res = await fetch("/api/admin/schedule", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -665,15 +757,12 @@ export function AdminDashboardClient({
         setWorkingHours(json.working_hours);
         showToast("Đã lưu giờ mở cửa tiệm.");
       }
-    } finally {
-      setSavingSchedule(false);
-    }
+    });
   };
 
   const handleAddTimeOff = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingSchedule(true);
-    try {
+    await runWithPending("add-off", async () => {
       const res = await fetch("/api/admin/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -690,20 +779,20 @@ export function AdminDashboardClient({
         setTimeOffs(json.time_offs);
         showToast("Đã khóa khung giờ nghỉ.");
       }
-    } finally {
-      setSavingSchedule(false);
-    }
+    });
   };
 
   const handleDeleteTimeOff = async (id: number) => {
-    const res = await fetch(`/api/admin/schedule?id=${id}`, {
-      method: "DELETE",
+    await runWithPending(`del-off:${id}`, async () => {
+      const res = await fetch(`/api/admin/schedule?id=${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setTimeOffs(json.time_offs);
+        showToast("Đã xóa lịch nghỉ.");
+      }
     });
-    if (res.ok) {
-      const json = await res.json();
-      setTimeOffs(json.time_offs);
-      showToast("Đã xóa lịch nghỉ.");
-    }
   };
 
   const handleSaveShopSettings = async (e: React.FormEvent) => {
@@ -767,7 +856,8 @@ export function AdminDashboardClient({
       qrUrl?: string | null;
       note?: string;
     },
-    successMsg: string
+    successMsg: string,
+    pendingKey = "qr:save"
   ) => {
     const nextMode = overrides.mode ?? paymentQrMode;
     const nextBankBin = overrides.bankBin ?? paymentBankBin;
@@ -782,8 +872,7 @@ export function AdminDashboardClient({
       return;
     }
 
-    setSavingQr(true);
-    try {
+    await runWithPending(pendingKey, async () => {
       const parsedInterval = Math.min(
         120,
         Math.max(5, Number(slotInterval) || 30)
@@ -819,9 +908,7 @@ export function AdminDashboardClient({
       setPaymentQrUrl(json.settings.payment_qr_url);
       setPaymentNote(json.settings.payment_note ?? "");
       showToast(successMsg);
-    } finally {
-      setSavingQr(false);
-    }
+    });
   };
 
   const handleUploadQrImage = async (
@@ -1015,10 +1102,15 @@ export function AdminDashboardClient({
           </button>
           <button
             type="button"
+            disabled={isPending("logout")}
             onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-xs font-medium text-muted hover:text-ivory"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-xs font-medium text-muted hover:text-ivory disabled:opacity-50"
           >
-            <LogOut className="h-4 w-4" />
+            {isPending("logout") ? (
+              <Loader2 className="h-4 w-4 animate-spin text-gold" />
+            ) : (
+              <LogOut className="h-4 w-4" />
+            )}
             Thoát
           </button>
         </div>
@@ -1114,36 +1206,48 @@ export function AdminDashboardClient({
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
+                      disabled={isAnyPendingWithPrefix(`chair:${barber.id}:`)}
                       onClick={() =>
                         handleSetBarberStatus(barber.id, "available")
                       }
-                      className={`rounded-lg border py-2 text-xs font-semibold transition ${effectiveStatus === "available"
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition disabled:opacity-60 ${effectiveStatus === "available"
                         ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
                         : "border-border-subtle bg-surface text-muted hover:text-ivory"
                         }`}
                     >
+                      {isPending(`chair:${barber.id}:available`) && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
                       Đang trống
                     </button>
                     <button
                       type="button"
+                      disabled={isAnyPendingWithPrefix(`chair:${barber.id}:`)}
                       onClick={() =>
                         handleSetBarberStatus(barber.id, "busy", 30)
                       }
-                      className={`rounded-lg border py-2 text-xs font-semibold transition ${effectiveStatus === "busy"
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition disabled:opacity-60 ${effectiveStatus === "busy"
                         ? "border-amber-400 bg-amber-500/20 text-amber-200"
                         : "border-border-subtle bg-surface text-muted hover:text-ivory"
                         }`}
                     >
+                      {isPending(`chair:${barber.id}:busy`) && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
                       Đang cắt (~30p)
                     </button>
                     <button
                       type="button"
+                      disabled={isAnyPendingWithPrefix(`chair:${barber.id}:`)}
                       onClick={() => handleSetBarberStatus(barber.id, "off")}
-                      className={`rounded-lg border py-2 text-xs font-semibold transition ${effectiveStatus === "off"
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition disabled:opacity-60 ${effectiveStatus === "off"
                         ? "border-zinc-500 bg-zinc-700/40 text-zinc-200"
                         : "border-border-subtle bg-surface text-muted hover:text-ivory"
                         }`}
                     >
+                      {isPending(`chair:${barber.id}:off`) && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
                       Tạm nghỉ
                     </button>
                   </div>
@@ -1267,9 +1371,13 @@ export function AdminDashboardClient({
 
               <button
                 type="button"
+                disabled={loadingBookings}
                 onClick={() => reloadCurrentBookings()}
-                className="text-xs text-gold-light hover:underline"
+                className="inline-flex items-center gap-1.5 text-xs text-gold-light hover:underline disabled:opacity-50"
               >
+                {loadingBookings && (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                )}
                 Làm mới danh sách
               </button>
             </div>
@@ -1455,86 +1563,50 @@ export function AdminDashboardClient({
                       </button>
                     </div>
 
-                    {/* Customer's latest Hair Passport cheat-sheet for the barber! */}
-                    {bk.latest_hair_record && (
-                      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/5 bg-obsidian/65 p-3 text-xs">
-                        {bk.latest_hair_record.photo_urls[0] && (
-                          <img
-                            src={bk.latest_hair_record.photo_urls[0]}
-                            alt={bk.latest_hair_record.style_name}
-                            className="h-11 w-11 rounded-lg object-cover border border-gold/25"
-                          />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 text-gold-light font-semibold">
-                            <Sparkles className="h-3.5 w-3.5" />
-                            Hồ sơ lần trước ({bk.latest_hair_record.cut_date}):{" "}
-                            {bk.latest_hair_record.style_name}
-                          </div>
-                          <p className="mt-0.5 line-clamp-1 text-muted">
-                            {bk.latest_hair_record.tags.join(" · ")}
-                            {bk.latest_hair_record.technical_note
-                              ? ` — ${bk.latest_hair_record.technical_note}`
-                              : ""}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
                     {/* Action buttons */}
                     {!["completed", "cancelled", "no_show"].includes(bk.status) && (
                       <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
-                        {bk.status === "confirmed" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleUpdateBookingStatus(bk, "arrived")
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-sky-400/35 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-500/25"
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                            Khách đã đến
-                          </button>
-                        )}
-                        {(bk.status === "confirmed" || bk.status === "arrived") && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleUpdateBookingStatus(bk, "in_progress")
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/30"
-                          >
-                            <Play className="h-3.5 w-3.5" />
-                            Bắt đầu cắt (Bật Busy)
-                          </button>
-                        )}
                         <button
                           type="button"
+                          disabled={isAnyPendingWithPrefix(`status:${bk.id}:`)}
                           onClick={() =>
                             handleUpdateBookingStatus(bk, "completed")
                           }
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
                         >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Hoàn thành (Trống ghế)
+                          {isPending(`status:${bk.id}:completed`) ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          )}
+                          Hoàn thành
                         </button>
                         <button
                           type="button"
+                          disabled={isAnyPendingWithPrefix(`status:${bk.id}:`)}
                           onClick={() =>
                             handleUpdateBookingStatus(bk, "no_show")
                           }
-                          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-500/10"
+                          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
                         >
-                          <Ban className="h-3.5 w-3.5" />
+                          {isPending(`status:${bk.id}:no_show`) ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Ban className="h-3.5 w-3.5" />
+                          )}
                           Không đến
                         </button>
                         <button
                           type="button"
+                          disabled={isAnyPendingWithPrefix(`status:${bk.id}:`)}
                           onClick={() =>
                             handleUpdateBookingStatus(bk, "cancelled")
                           }
-                          className="rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-ivory"
+                          className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-ivory disabled:opacity-50"
                         >
+                          {isPending(`status:${bk.id}:cancelled`) && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
                           Hủy
                         </button>
                       </div>
@@ -1561,10 +1633,15 @@ export function AdminDashboardClient({
                             </span>
                             <button
                               type="button"
+                              disabled={isAnyPendingWithPrefix(`pay:${bk.id}:`)}
                               onClick={() => handleUpdatePayment(bk, "unpaid")}
-                              className="inline-flex items-center gap-1 rounded-lg border border-zinc-700/80 px-2.5 py-1 text-[11px] text-muted hover:text-ivory"
+                              className="inline-flex items-center gap-1 rounded-lg border border-zinc-700/80 px-2.5 py-1 text-[11px] text-muted hover:text-ivory disabled:opacity-50"
                             >
-                              <RotateCcw className="h-3 w-3" />
+                              {isPending(`pay:${bk.id}:unpaid:none`) ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3 w-3" />
+                              )}
                               Hoàn tác chưa thu
                             </button>
                           </>
@@ -1576,22 +1653,32 @@ export function AdminDashboardClient({
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
+                                disabled={isAnyPendingWithPrefix(`pay:${bk.id}:`)}
                                 onClick={() =>
                                   handleUpdatePayment(bk, "paid", "cash")
                                 }
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
                               >
-                                <Banknote className="h-3.5 w-3.5" />
+                                {isPending(`pay:${bk.id}:paid:cash`) ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Banknote className="h-3.5 w-3.5" />
+                                )}
                                 Đã nhận tiền mặt
                               </button>
                               <button
                                 type="button"
+                                disabled={isAnyPendingWithPrefix(`pay:${bk.id}:`)}
                                 onClick={() =>
                                   handleUpdatePayment(bk, "paid", "transfer")
                                 }
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-gold-light hover:bg-gold hover:text-obsidian"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-gold-light hover:bg-gold hover:text-obsidian disabled:opacity-50"
                               >
-                                <CreditCard className="h-3.5 w-3.5" />
+                                {isPending(`pay:${bk.id}:paid:transfer`) ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <CreditCard className="h-3.5 w-3.5" />
+                                )}
                                 Đã nhận chuyển khoản
                               </button>
                             </div>
@@ -1603,8 +1690,8 @@ export function AdminDashboardClient({
                 );
               })}
 
-              {/* Pagination Bar (20 items / page) */}
-              {totalBookings > 0 && (
+              {/* Pagination Bar (only shown when > 1 page, 20 items / page) */}
+              {totalPages > 1 && (
                 <div className="flex flex-col items-center justify-between gap-3 rounded-2xl border border-border-subtle bg-charcoal/80 px-4 py-3 sm:flex-row">
                   <div className="text-xs text-muted">
                     Hiển thị{" "}
@@ -1612,65 +1699,63 @@ export function AdminDashboardClient({
                       {pageStartItem}–{pageEndItem}
                     </strong>{" "}
                     / <strong className="text-gold-light">{totalBookings}</strong>{" "}
-                    lịch hẹn (20 / trang)
+                    lịch hẹn
                   </div>
 
-                  {totalPages > 1 && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={page <= 1}
-                        onClick={() => {
-                          setPage((p) => Math.max(1, p - 1));
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-xs font-medium text-ivory disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        Trước
-                      </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={page <= 1}
+                      onClick={() => {
+                        setPage((p) => Math.max(1, p - 1));
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-xs font-medium text-ivory disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      Trước
+                    </button>
 
-                      {getVisiblePageNumbers().map((item, idx) =>
-                        item === "ellipsis" ? (
-                          <span
-                            key={`e-${idx}`}
-                            className="px-1.5 text-xs text-muted"
-                          >
-                            …
-                          </span>
-                        ) : (
-                          <button
-                            key={item}
-                            type="button"
-                            onClick={() => {
-                              setPage(item);
-                              window.scrollTo({ top: 0, behavior: "smooth" });
-                            }}
-                            className={`min-w-[32px] rounded-lg border px-2 py-1.5 text-xs font-semibold ${
-                              item === page
-                                ? "border-gold bg-gold text-obsidian"
-                                : "border-border-subtle bg-surface text-ivory hover:border-gold/50"
-                            }`}
-                          >
-                            {item}
-                          </button>
-                        )
-                      )}
+                    {getVisiblePageNumbers().map((item, idx) =>
+                      item === "ellipsis" ? (
+                        <span
+                          key={`e-${idx}`}
+                          className="px-1.5 text-xs text-muted"
+                        >
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            setPage(item);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          className={`min-w-[32px] rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                            item === page
+                              ? "border-gold bg-gold text-obsidian"
+                              : "border-border-subtle bg-surface text-ivory hover:border-gold/50"
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      )
+                    )}
 
-                      <button
-                        type="button"
-                        disabled={page >= totalPages}
-                        onClick={() => {
-                          setPage((p) => Math.min(totalPages, p + 1));
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-xs font-medium text-ivory disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Sau
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
+                    <button
+                      type="button"
+                      disabled={page >= totalPages}
+                      onClick={() => {
+                        setPage((p) => Math.min(totalPages, p + 1));
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-xs font-medium text-ivory disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Sau
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1688,10 +1773,13 @@ export function AdminDashboardClient({
               </h2>
               <button
                 type="button"
-                disabled={savingSchedule}
+                disabled={isPending("save-hours")}
                 onClick={handleSaveWorkingHours}
-                className="rounded-xl bg-gold px-4 py-2 text-xs font-semibold text-obsidian hover:bg-gold-light disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gold px-4 py-2 text-xs font-semibold text-obsidian hover:bg-gold-light disabled:opacity-50"
               >
+                {isPending("save-hours") && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                )}
                 Lưu thay đổi
               </button>
             </div>
@@ -1828,9 +1916,12 @@ export function AdminDashboardClient({
 
               <button
                 type="submit"
-                disabled={savingSchedule}
-                className="w-full rounded-xl bg-gold py-2.5 text-xs font-semibold text-obsidian hover:bg-gold-light"
+                disabled={isPending("add-off")}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gold py-2.5 text-xs font-semibold text-obsidian hover:bg-gold-light disabled:opacity-50"
               >
+                {isPending("add-off") && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                )}
                 Thêm lịch khóa
               </button>
             </form>
@@ -1861,10 +1952,15 @@ export function AdminDashboardClient({
                     </div>
                     <button
                       type="button"
+                      disabled={isPending(`del-off:${off.id}`)}
                       onClick={() => handleDeleteTimeOff(off.id)}
-                      className="text-red-400 hover:text-red-300"
+                      className="text-red-400 hover:text-red-300 disabled:opacity-50"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {isPending(`del-off:${off.id}`) ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
                 ))
@@ -1892,7 +1988,7 @@ export function AdminDashboardClient({
                 svc.is_active ? "opacity-100" : "opacity-60"
               }`}
             >
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-serif text-base font-semibold text-ivory">
                     {svc.name}
@@ -1903,20 +1999,35 @@ export function AdminDashboardClient({
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-muted">
+                {svc.description && (
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted/90">
+                    {svc.description}
+                  </p>
+                )}
+                <div className="mt-1 text-xs text-muted">
                   {svc.duration_minutes} phút ·{" "}
                   <strong className="text-gold-light">
                     {formatVND(svc.price)}
                   </strong>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex shrink-0 items-center gap-2.5">
                 <ToggleSwitch
                   checked={svc.is_active}
                   label={svc.is_active ? "Bật" : "Tắt"}
                   ariaLabel={`Bật tắt dịch vụ ${svc.name}`}
+                  loading={isPending(`toggle-svc:${svc.id}`)}
                   onChange={() => handleToggleService(svc)}
                 />
+                <button
+                  type="button"
+                  title="Chỉnh sửa dịch vụ"
+                  aria-label={`Chỉnh sửa dịch vụ ${svc.name}`}
+                  onClick={() => openEditServiceModal(svc)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gold/30 bg-gold/10 text-gold-light hover:border-gold hover:bg-gold hover:text-obsidian"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
                 <button
                   type="button"
                   title="Xóa dịch vụ"
@@ -1988,8 +2099,9 @@ export function AdminDashboardClient({
         <button
           type="submit"
           disabled={savingSvc}
-          className="w-full rounded-xl bg-gold py-2.5 text-sm font-semibold text-obsidian hover:bg-gold-light"
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gold py-2.5 text-sm font-semibold text-obsidian hover:bg-gold-light disabled:opacity-50"
         >
+          {savingSvc && <Loader2 className="h-4 w-4 animate-spin" />}
           Thêm dịch vụ
         </button>
       </form>
@@ -2039,6 +2151,7 @@ export function AdminDashboardClient({
                   checked={b.is_active}
                   label={b.is_active ? "Hoạt động" : "Tạm ngưng"}
                   ariaLabel={`Bật tắt thợ ${b.name}`}
+                  loading={isPending(`toggle-barber:${b.id}`)}
                   onChange={() => handleToggleBarberActive(b)}
                 />
                 <button
@@ -2106,8 +2219,9 @@ export function AdminDashboardClient({
         <button
           type="submit"
           disabled={savingBarber}
-          className="w-full rounded-xl bg-gold py-2.5 text-sm font-semibold text-obsidian hover:bg-gold-light"
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gold py-2.5 text-sm font-semibold text-obsidian hover:bg-gold-light disabled:opacity-50"
         >
+          {savingBarber && <Loader2 className="h-4 w-4 animate-spin" />}
           Thêm thợ vào tiệm
         </button>
       </form>
@@ -2407,16 +2521,21 @@ export function AdminDashboardClient({
                   </label>
                   <button
                     type="button"
-                    disabled={savingQr}
+                    disabled={isAnyPendingWithPrefix("qr:") || uploadingQr}
                     onClick={() =>
                       persistQrSettings(
                         { qrUrl: null },
-                        "Đã xóa ảnh mã QR."
+                        "Đã xóa ảnh mã QR.",
+                        "qr:delete"
                       )
                     }
-                    className="inline-flex items-center gap-1 rounded-xl border border-red-500/35 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10"
+                    className="inline-flex items-center gap-1 rounded-xl border border-red-500/35 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    {isPending("qr:delete") ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
                     Xóa QR
                   </button>
                 </div>
@@ -2469,13 +2588,13 @@ export function AdminDashboardClient({
 
         <button
           type="button"
-          disabled={savingQr}
+          disabled={isAnyPendingWithPrefix("qr:") || uploadingQr}
           onClick={() =>
-            persistQrSettings({}, "Đã lưu cấu hình mã QR chuyển khoản!")
+            persistQrSettings({}, "Đã lưu cấu hình mã QR chuyển khoản!", "qr:save")
           }
           className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/40 bg-gold/10 py-2.5 text-xs font-semibold text-gold-light hover:bg-gold hover:text-obsidian disabled:opacity-40"
         >
-          {savingQr && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {isPending("qr:save") && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Lưu cấu hình mã QR
         </button>
       </div>
@@ -2585,6 +2704,132 @@ export function AdminDashboardClient({
         </div>
       </div>
     </div>
+  </div>
+)}
+
+{/* MODAL: EDIT SERVICE */}
+{editingService && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+    <form
+      onSubmit={handleUpdateService}
+      className="card-classic w-full max-w-md rounded-3xl p-6 space-y-4 shadow-2xl"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-gold/30 bg-gold/10 text-gold">
+            <Pencil className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="font-serif text-lg font-bold text-ivory">
+              Chỉnh Sửa Dịch Vụ
+            </h3>
+            <p className="text-xs text-muted">
+              Cập nhật tên, mô tả, thời lượng hoặc giá
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={isPending("edit-svc")}
+          onClick={() => setEditingService(null)}
+          className="text-muted hover:text-ivory disabled:opacity-40"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted">
+          Tên dịch vụ / Combo <span className="text-gold">*</span>
+        </label>
+        <input
+          type="text"
+          required
+          value={editSvcName}
+          onChange={(e) => {
+            setEditSvcName(e.target.value);
+            if (editSvcError) setEditSvcError(null);
+          }}
+          placeholder="VD: Cắt tóc thiết kế & Gội xả"
+          className="mt-1 w-full rounded-xl border border-border-subtle bg-obsidian px-3.5 py-2.5 text-sm text-ivory focus:border-gold focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted">Mô tả ngắn</label>
+        <textarea
+          rows={3}
+          maxLength={400}
+          value={editSvcDesc}
+          onChange={(e) => setEditSvcDesc(e.target.value)}
+          placeholder="Mô tả chi tiết dịch vụ cho khách dễ chọn..."
+          className="mt-1 w-full rounded-xl border border-border-subtle bg-obsidian px-3.5 py-2.5 text-sm text-ivory focus:border-gold focus:outline-none"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-medium text-muted">
+            Thời lượng (phút) <span className="text-gold">*</span>
+          </label>
+          <input
+            type="number"
+            required
+            min={10}
+            max={240}
+            step={5}
+            value={editSvcDuration}
+            onChange={(e) => {
+              setEditSvcDuration(Number(e.target.value));
+              if (editSvcError) setEditSvcError(null);
+            }}
+            className="mt-1 w-full rounded-xl border border-border-subtle bg-obsidian px-3.5 py-2.5 text-sm text-ivory focus:border-gold focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted">
+            Giá (VNĐ) <span className="text-gold">*</span>
+          </label>
+          <input
+            type="number"
+            required
+            min={0}
+            step={1000}
+            value={editSvcPrice}
+            onChange={(e) => {
+              setEditSvcPrice(Number(e.target.value));
+              if (editSvcError) setEditSvcError(null);
+            }}
+            className="mt-1 w-full rounded-xl border border-border-subtle bg-obsidian px-3.5 py-2.5 text-sm text-ivory focus:border-gold focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {editSvcError && (
+        <p className="text-xs text-red-400">{editSvcError}</p>
+      )}
+
+      <div className="flex items-center justify-end gap-2 pt-2">
+        <button
+          type="button"
+          disabled={isPending("edit-svc")}
+          onClick={() => setEditingService(null)}
+          className="rounded-xl border border-border-subtle bg-surface px-4 py-2.5 text-xs font-medium text-ivory hover:border-gold/40 disabled:opacity-50"
+        >
+          Hủy bỏ
+        </button>
+        <button
+          type="submit"
+          disabled={isPending("edit-svc") || !editSvcName.trim()}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-gold px-5 py-2.5 text-xs font-semibold text-obsidian hover:bg-gold-light disabled:opacity-50"
+        >
+          {isPending("edit-svc") && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          )}
+          Lưu thay đổi
+        </button>
+      </div>
+    </form>
   </div>
 )}
 

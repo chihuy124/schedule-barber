@@ -17,11 +17,16 @@ const createServiceSchema = z.object({
 
 const patchServiceSchema = z.object({
   id: z.number().int().positive(),
-  name: z.string().trim().min(2).optional(),
-  description: z.string().trim().max(400).optional(),
+  name: z.string().trim().min(2, "Tên dịch vụ phải có ít nhất 2 ký tự.").optional(),
+  description: z.string().trim().max(400, "Mô tả tối đa 400 ký tự.").optional(),
   category: z.string().trim().min(1).optional(),
-  duration_minutes: z.number().int().min(10).max(240).optional(),
-  price: z.number().int().min(0).optional(),
+  duration_minutes: z
+    .number()
+    .int()
+    .min(10, "Thời lượng tối thiểu 10 phút.")
+    .max(240, "Thời lượng tối đa 240 phút.")
+    .optional(),
+  price: z.number().int().min(0, "Giá không được âm.").optional(),
   is_popular: z.boolean().optional(),
   is_active: z.boolean().optional(),
 });
@@ -93,7 +98,11 @@ export async function PATCH(request: NextRequest) {
     const parsed = patchServiceSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Dữ liệu cập nhật dịch vụ không hợp lệ." },
+        {
+          error:
+            parsed.error.issues[0]?.message ||
+            "Dữ liệu cập nhật dịch vụ không hợp lệ.",
+        },
         { status: 400 }
       );
     }

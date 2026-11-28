@@ -18,9 +18,11 @@ import {
   Copy,
   Check,
   QrCode,
+  Download,
 } from "lucide-react";
 import type { BookingWithDetails, PaymentQrMode, TimeSlot } from "@/lib/types";
 import { buildVietQrUrl, findBankByBin } from "@/lib/vietqr";
+import { downloadQrImageAsPng } from "@/lib/qr-download";
 import {
   addDaysToDate,
   BOOKING_STATUS_META,
@@ -57,6 +59,8 @@ export function BookingDetailClient({
   const [booking, setBooking] = useState<BookingWithDetails>(initialBooking);
   const [copied, setCopied] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
+  const [downloadingQr, setDownloadingQr] = useState(false);
+  const [downloadedQr, setDownloadedQr] = useState(false);
 
   // Reschedule state
   const [showReschedule, setShowReschedule] = useState(false);
@@ -152,6 +156,21 @@ export function BookingDetailClient({
     navigator.clipboard?.writeText(shop.payment_account_no);
     setCopiedAccount(true);
     setTimeout(() => setCopiedAccount(false), 1800);
+  };
+
+  const handleDownloadQr = async () => {
+    if (!resolvedQrUrl || downloadingQr) return;
+    setDownloadingQr(true);
+    try {
+      await downloadQrImageAsPng(
+        resolvedQrUrl,
+        `QR-KenBarbershop-${booking.code}.png`
+      );
+      setDownloadedQr(true);
+      setTimeout(() => setDownloadedQr(false), 2200);
+    } finally {
+      setDownloadingQr(false);
+    }
   };
 
   const handleCancel = async () => {
@@ -379,19 +398,40 @@ export function BookingDetailClient({
           ) : resolvedQrUrl && booking.status !== "cancelled" ? (
             <div className="rounded-2xl border border-gold/25 bg-obsidian/70 p-4 sm:p-5">
               <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-                <a
-                  href={resolvedQrUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Bấm để xem ảnh QR cỡ lớn"
-                  className="shrink-0 rounded-2xl bg-white p-2.5 shadow-lg transition hover:scale-[1.02]"
-                >
-                  <img
-                    src={resolvedQrUrl}
-                    alt={`Mã QR chuyển khoản ${shop.name}`}
-                    className="h-44 w-44 object-contain sm:h-48 sm:w-48"
-                  />
-                </a>
+                <div className="flex shrink-0 flex-col items-center gap-2.5">
+                  <a
+                    href={resolvedQrUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Bấm để xem ảnh QR cỡ lớn"
+                    className="rounded-2xl bg-white p-2.5 shadow-lg transition hover:scale-[1.02]"
+                  >
+                    <img
+                      src={resolvedQrUrl}
+                      alt={`Mã QR chuyển khoản ${shop.name}`}
+                      className="h-44 w-44 object-contain sm:h-48 sm:w-48"
+                    />
+                  </a>
+                  <button
+                    type="button"
+                    disabled={downloadingQr}
+                    onClick={handleDownloadQr}
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-gold/40 bg-gold/10 px-3.5 py-2 text-xs font-semibold text-gold-light transition hover:bg-gold hover:text-obsidian disabled:opacity-50"
+                  >
+                    {downloadingQr ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : downloadedQr ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    {downloadingQr
+                      ? "Đang tải..."
+                      : downloadedQr
+                        ? "Đã tải mã QR"
+                        : "Tải mã QR"}
+                  </button>
+                </div>
                 <div className="flex-1 space-y-2.5 text-center sm:text-left">
                   <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                     <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gold-light">

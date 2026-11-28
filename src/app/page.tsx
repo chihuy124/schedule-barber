@@ -413,8 +413,12 @@ export default async function HomePage() {
       <footer className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="grid gap-8 md:grid-cols-3">
           <div className="space-y-3">
-            <div className="flex items-center gap-2.5">
-              <Scissors className="h-5 w-5 -rotate-45 text-gold" />
+            <div className="flex items-center gap-3">
+              <img
+                src="/images/ken-logo.png"
+                alt={settings.name}
+                className="h-12 w-12 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(200,162,83,0.25)]"
+              />
               <span className="font-serif text-xl font-bold tracking-wider text-ivory">
                 {settings.name.toUpperCase()}
               </span>

@@ -29,9 +29,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Pencil,
+  Download,
 } from "lucide-react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
+import { CameraCaptureModal } from "@/components/CameraCaptureModal";
 import { buildVietQrUrl, VIETQR_BANKS } from "@/lib/vietqr";
+import { downloadQrImageAsPng } from "@/lib/qr-download";
 import { compressImageFile } from "@/lib/image-compress";
 import type {
   Barber,
@@ -172,6 +175,7 @@ export function AdminDashboardClient({
   const [techNote, setTechNote] = useState("");
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showCameraModal, setShowCameraModal] = useState(false);
   const [savingPassport, setSavingPassport] = useState(false);
 
   // New Service form
@@ -537,9 +541,7 @@ export function AdminDashboardClient({
     setPhotoUrls([]);
   };
 
-  const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadHairPhotoFile = async (file: File) => {
     setUploadingPhoto(true);
     try {
       const optimized = await compressImageFile(file, {
@@ -557,8 +559,14 @@ export function AdminDashboardClient({
       }
     } finally {
       setUploadingPhoto(false);
-      e.target.value = "";
     }
+  };
+
+  const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await uploadHairPhotoFile(file);
   };
 
   const handleSaveHairRecord = async (e: React.FormEvent) => {
@@ -2470,7 +2478,7 @@ export function AdminDashboardClient({
             </div>
 
             {paymentBankBin && paymentAccountNo.trim().length >= 4 && (
-              <div className="flex flex-col items-center gap-2 rounded-2xl border border-gold/20 bg-obsidian/70 p-3.5">
+              <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-gold/20 bg-obsidian/70 p-3.5">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gold-light">
                   Xem trước VietQR mẫu (150.000đ · KEN DEMO)
                 </span>
@@ -2487,6 +2495,31 @@ export function AdminDashboardClient({
                     className="h-44 w-44 object-contain"
                   />
                 </div>
+                <button
+                  type="button"
+                  disabled={isPending("qr:download")}
+                  onClick={() =>
+                    runWithPending("qr:download", async () => {
+                      await downloadQrImageAsPng(
+                        buildVietQrUrl({
+                          bankBin: paymentBankBin,
+                          accountNo: paymentAccountNo,
+                          accountName: paymentAccountName,
+                        }),
+                        "QR-KenBarbershop.png"
+                      );
+                      showToast("Đã tải ảnh mã QR của tiệm!");
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-gold/40 bg-gold/10 px-3.5 py-2 text-xs font-semibold text-gold-light hover:bg-gold hover:text-obsidian disabled:opacity-50"
+                >
+                  {isPending("qr:download") ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  Tải mã QR tiệm
+                </button>
               </div>
             )}
           </div>
@@ -2519,6 +2552,27 @@ export function AdminDashboardClient({
                       className="hidden"
                     />
                   </label>
+                  <button
+                    type="button"
+                    disabled={isPending("qr:download")}
+                    onClick={() =>
+                      runWithPending("qr:download", async () => {
+                        await downloadQrImageAsPng(
+                          paymentQrUrl,
+                          "QR-KenBarbershop.png"
+                        );
+                        showToast("Đã tải ảnh mã QR!");
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle bg-surface px-3 py-2 text-xs font-medium text-ivory hover:border-gold/40 hover:text-gold-light disabled:opacity-50"
+                  >
+                    {isPending("qr:download") ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    Tải QR
+                  </button>
                   <button
                     type="button"
                     disabled={isAnyPendingWithPrefix("qr:") || uploadingQr}
@@ -3143,7 +3197,7 @@ export function AdminDashboardClient({
 
         <div>
           <label className="text-xs font-medium text-muted">
-            Ảnh thành phẩm (lưu trực tiếp lên máy)
+            Ảnh thành phẩm (chụp trực tiếp hoặc chọn từ máy)
           </label>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             {photoUrls.map((url) => (
@@ -3160,18 +3214,33 @@ export function AdminDashboardClient({
                 </button>
               </div>
             ))}
-            <label className="flex h-20 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gold/40 bg-obsidian/70 text-[11px] text-gold-light hover:bg-gold/10">
+            <button
+              type="button"
+              disabled={uploadingPhoto}
+              onClick={() => setShowCameraModal(true)}
+              className="flex h-20 w-24 flex-col items-center justify-center gap-1 rounded-xl border border-gold/45 bg-gold/10 text-[11px] font-semibold text-gold-light transition hover:bg-gold hover:text-obsidian disabled:opacity-50"
+            >
               {uploadingPhoto ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
-                  <Upload className="h-4 w-4" />
+                  <Camera className="h-4 w-4" />
+                  <span>Chụp ảnh</span>
+                </>
+              )}
+            </button>
+            <label className="flex h-20 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gold/40 bg-obsidian/70 text-[11px] text-ivory/90 hover:border-gold hover:bg-gold/10 hover:text-gold-light">
+              {uploadingPhoto ? (
+                <Loader2 className="h-4 w-4 animate-spin text-gold" />
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 text-gold" />
                   <span>Tải ảnh</span>
                 </>
               )}
               <input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 onChange={handleUploadPhoto}
                 className="hidden"
               />
@@ -3195,6 +3264,13 @@ export function AdminDashboardClient({
     </div>
   )
 }
+
+<CameraCaptureModal
+  open={showCameraModal}
+  uploading={uploadingPhoto}
+  onClose={() => setShowCameraModal(false)}
+  onCaptureFile={uploadHairPhotoFile}
+/>
     </div >
   );
 }

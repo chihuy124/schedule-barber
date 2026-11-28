@@ -15,8 +15,9 @@ export async function compressImageFile(
     return file;
   }
 
-  // Already tiny (< 90 KB) -> keep as-is
-  if (file.size <= 90 * 1024) {
+  // Already tiny & in a web-safe format -> keep as-is
+  const webSafe = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+  if (webSafe && file.size <= 90 * 1024) {
     return file;
   }
 
@@ -50,23 +51,34 @@ export async function compressImageFile(
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Prefer WebP if supported, fallback to JPEG
-      const targetType = "image/webp";
+      const finalize = (blob: Blob | null) => {
+        if (!blob) {
+          resolve(file);
+          return;
+        }
+        const finalType = blob.type || "image/jpeg";
+        const ext = finalType === "image/webp" ? ".webp" : ".jpg";
+        const baseName = file.name.replace(/\.[^.]+$/, "") || "photo";
+        const compressed = new File([blob], `${baseName}${ext}`, {
+          type: finalType,
+        });
+        if (!webSafe) {
+          resolve(compressed);
+          return;
+        }
+        resolve(compressed.size < file.size ? compressed : file);
+      };
+
+      // Prefer WebP; if browser falls back to uncompressed PNG (e.g. older Safari), encode JPEG instead
       canvas.toBlob(
         (blob) => {
-          if (!blob) {
-            resolve(file);
-            return;
+          if (blob && blob.type === "image/webp") {
+            finalize(blob);
+          } else {
+            canvas.toBlob(finalize, "image/jpeg", quality);
           }
-          const finalType = blob.type || "image/jpeg";
-          const ext = finalType === "image/webp" ? ".webp" : ".jpg";
-          const baseName = file.name.replace(/\.[^.]+$/, "");
-          const compressed = new File([blob], `${baseName}${ext}`, {
-            type: finalType,
-          });
-          resolve(compressed.size < file.size ? compressed : file);
         },
-        targetType,
+        "image/webp",
         quality
       );
     };

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Lock, Scissors, Loader2, ArrowLeft } from "lucide-react";
+import { Lock, Loader2, ArrowLeft } from "lucide-react";
 
 export function AdminLoginForm() {
   const router = useRouter();
@@ -40,9 +40,11 @@ export function AdminLoginForm() {
     <div className="flex min-h-[calc(100vh-64px)] items-center justify-center px-4 py-12">
       <div className="card-classic w-full max-w-md rounded-3xl p-7 shadow-2xl shadow-black/60">
         <div className="mb-6 text-center space-y-2">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/40 bg-gold/10 text-gold">
-            <Scissors className="h-5 w-5 -rotate-45" />
-          </div>
+          <img
+            src="/images/ken-logo.png"
+            alt="Ken Barbershop"
+            className="mx-auto h-20 w-20 object-contain drop-shadow-[0_0_16px_rgba(200,162,83,0.3)]"
+          />
           <h1 className="font-serif text-2xl font-bold text-ivory">
             Quản Trị Ken Barbershop
           </h1>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Scissors, Sparkles, CalendarCheck } from "lucide-react";
+import { Sparkles, CalendarCheck } from "lucide-react";
 import { LinkSpinner } from "@/components/LinkSpinner";
 
 export function Navbar() {
@@ -17,10 +17,12 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 border-b border-gold/15 bg-obsidian/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="group flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-gold/40 bg-charcoal text-gold transition-colors group-hover:border-gold group-hover:bg-gold/10">
-            <Scissors className="h-4 w-4 -rotate-45" />
-          </div>
+        <Link href="/" className="group flex items-center gap-2.5">
+          <img
+            src="/images/ken-logo.png"
+            alt="Ken Barbershop"
+            className="h-11 w-11 shrink-0 object-contain drop-shadow-[0_0_8px_rgba(200,162,83,0.28)] transition-transform group-hover:scale-105"
+          />
           <div className="leading-tight">
             <span className="block font-serif text-base font-semibold tracking-wider text-ivory sm:text-lg">
               KEN BARBERSHOP

@@ -15,6 +15,12 @@ export const metadata: Metadata = {
   title: "Ken Barbershop — Đặt Lịch Cắt Tóc Quý Ông",
   description:
     "Đặt lịch cắt tóc trực tuyến tại Ken Barbershop trong 30 giây. Xem trạng thái ghế trực tiếp, đặt lại 1 chạm và lưu giữ Hồ sơ kiểu tóc cá nhân.",
+  openGraph: {
+    title: "Ken Barbershop — Đặt Lịch Cắt Tóc Quý Ông",
+    description:
+      "Đặt lịch cắt tóc trực tuyến trong 30 giây. Xem trạng thái ghế trực tiếp và lưu giữ Hồ sơ kiểu tóc.",
+    images: [{ url: "/images/ken-logo-badge.png", width: 512, height: 512 }],
+  },
 };
 
 export const viewport: Viewport = {

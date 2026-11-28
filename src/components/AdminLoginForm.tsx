@@ -15,6 +15,7 @@ export function AdminLoginForm() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    let succeeded = false;
     try {
       const res = await fetch("/api/admin/auth", {
         method: "POST",
@@ -26,11 +27,12 @@ export function AdminLoginForm() {
         setError(json.error || "Mã PIN không đúng.");
         return;
       }
+      succeeded = true;
       router.refresh();
     } catch {
       setError("Không thể kết nối máy chủ.");
     } finally {
-      setLoading(false);
+      if (!succeeded) setLoading(false);
     }
   };
 

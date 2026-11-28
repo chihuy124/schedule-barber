@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
+import { NavigationProgress } from "@/components/NavigationProgress";
 import "./globals.css";
 
 const beVietnam = Be_Vietnam_Pro({
@@ -29,6 +31,9 @@ export default function RootLayout({
   return (
     <html lang="vi" className={`${beVietnam.variable} dark`}>
       <body className="bg-obsidian text-ivory font-sans antialiased selection:bg-gold/30 selection:text-gold-light">
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
         {children}
       </body>
     </html>

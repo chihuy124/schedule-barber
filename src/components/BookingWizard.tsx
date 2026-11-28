@@ -262,6 +262,7 @@ export function BookingWizard({ barbers, services, initialToday }: Props) {
     setPhoneError(null);
 
     setSubmitting(true);
+    let redirected = false;
     try {
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -289,11 +290,12 @@ export function BookingWizard({ barbers, services, initialToday }: Props) {
 
       localStorage.setItem(STORAGE_PHONE_KEY, json.booking.customer_phone);
       localStorage.setItem(STORAGE_NAME_KEY, json.booking.customer_name);
+      redirected = true;
       router.push(`/booking/${json.booking.code}?new=1`);
     } catch {
       setError("Lỗi kết nối máy chủ. Vui lòng thử lại.");
     } finally {
-      setSubmitting(false);
+      if (!redirected) setSubmitting(false);
     }
   };
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { LinkSpinner } from "@/components/LinkSpinner";
 import {
   Zap,
   Sparkles,
@@ -82,6 +83,7 @@ export function OneTapRebookCard() {
 
     setSubmitting(true);
     setError(null);
+    let redirected = false;
     try {
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -102,11 +104,12 @@ export function OneTapRebookCard() {
         await fetchCustomer(lookup.customer.phone, false);
         return;
       }
+      redirected = true;
       router.push(`/booking/${json.booking.code}?new=1`);
     } catch {
       setError("Có lỗi xảy ra khi đặt lịch.");
     } finally {
-      setSubmitting(false);
+      if (!redirected) setSubmitting(false);
     }
   };
 
@@ -240,8 +243,9 @@ export function OneTapRebookCard() {
                     </button>
                     <Link
                       href={`/book?services=${services.map((s) => s.id).join(",")}`}
-                      className="rounded-xl border border-border-subtle bg-surface px-3.5 py-3 text-xs font-medium text-ivory/90 transition hover:border-gold/40"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle bg-surface px-3.5 py-3 text-xs font-medium text-ivory/90 transition hover:border-gold/40"
                     >
+                      <LinkSpinner className="h-3.5 w-3.5 text-gold" />
                       Chọn giờ khác
                     </Link>
                   </div>
@@ -252,7 +256,10 @@ export function OneTapRebookCard() {
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-5 py-3 text-sm font-semibold text-obsidian hover:bg-gold-light"
                 >
                   Chọn khung giờ đặt lịch
-                  <ArrowRight className="h-4 w-4" />
+                  <LinkSpinner
+                    className="h-4 w-4"
+                    fallback={<ArrowRight className="h-4 w-4" />}
+                  />
                 </Link>
               )}
 

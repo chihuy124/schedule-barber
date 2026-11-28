@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { LinkSpinner } from "@/components/LinkSpinner";
 import {
   Phone,
   Search,
@@ -165,7 +166,10 @@ export function HairPassportClient({ today }: { today: string }) {
             className="inline-flex items-center gap-2 rounded-full bg-gold px-6 py-3 text-sm font-semibold text-obsidian hover:bg-gold-light"
           >
             Đặt lịch trải nghiệm ngay
-            <ArrowRight className="h-4 w-4" />
+            <LinkSpinner
+              className="h-4 w-4"
+              fallback={<ArrowRight className="h-4 w-4" />}
+            />
           </Link>
         </div>
       )}
@@ -206,7 +210,10 @@ export function HairPassportClient({ today }: { today: string }) {
                 .join(",")}`}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-5 py-3 text-sm font-semibold text-obsidian shadow-lg shadow-gold/15 transition hover:bg-gold-light"
             >
-              <Zap className="h-4 w-4" />
+              <LinkSpinner
+                className="h-4 w-4"
+                fallback={<Zap className="h-4 w-4" />}
+              />
               Đặt lại combo quen
             </Link>
           </div>
@@ -245,7 +252,10 @@ export function HairPassportClient({ today }: { today: string }) {
                           {bk.service_names.join(" + ")} · {formatVND(bk.total_price)}
                         </div>
                       </div>
-                      <ArrowRight className="h-4 w-4 shrink-0 text-gold" />
+                      <LinkSpinner
+                        className="h-4 w-4 text-gold"
+                        fallback={<ArrowRight className="h-4 w-4 shrink-0 text-gold" />}
+                      />
                     </Link>
                   );
                 })}
@@ -347,7 +357,10 @@ export function HairPassportClient({ today }: { today: string }) {
                           href={bookUrl}
                           className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/40 bg-gold/10 py-2.5 text-xs font-semibold text-gold-light transition hover:bg-gold hover:text-obsidian"
                         >
-                          <Zap className="h-3.5 w-3.5" />
+                          <LinkSpinner
+                            className="h-3.5 w-3.5"
+                            fallback={<Zap className="h-3.5 w-3.5" />}
+                          />
                           Đặt cắt lại đúng kiểu này
                         </Link>
                       </div>

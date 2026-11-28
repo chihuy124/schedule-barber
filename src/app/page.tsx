@@ -14,6 +14,7 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { LiveChairBanner } from "@/components/LiveChairBanner";
 import { OneTapRebookCard } from "@/components/OneTapRebookCard";
+import { LinkSpinner } from "@/components/LinkSpinner";
 import {
   getActiveBarbers,
   getActiveServices,
@@ -95,7 +96,10 @@ export default async function HomePage() {
                 href="/book"
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-gold px-7 py-3.5 text-sm font-semibold text-obsidian shadow-xl shadow-gold/20 transition hover:bg-gold-light sm:text-base"
               >
-                <CalendarCheck className="h-4 w-4" />
+                <LinkSpinner
+                  className="h-4 w-4"
+                  fallback={<CalendarCheck className="h-4 w-4" />}
+                />
                 Đặt lịch ngay
                 <ArrowRight className="h-4 w-4" />
               </Link>
@@ -103,7 +107,10 @@ export default async function HomePage() {
                 href="/passport"
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-gold/35 bg-obsidian/75 px-6 py-3.5 text-sm font-medium text-ivory backdrop-blur transition hover:border-gold hover:text-gold-light sm:text-base"
               >
-                <Sparkles className="h-4 w-4 text-gold" />
+                <LinkSpinner
+                  className="h-4 w-4 text-gold"
+                  fallback={<Sparkles className="h-4 w-4 text-gold" />}
+                />
                 Mở Hồ sơ kiểu tóc
               </Link>
             </div>
@@ -243,7 +250,12 @@ export default async function HomePage() {
 
               <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3 text-xs font-medium text-gold-light/90">
                 <span>Đặt lịch dịch vụ này</span>
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                <LinkSpinner
+                  className="h-4 w-4 text-gold"
+                  fallback={
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  }
+                />
               </div>
             </Link>
           ))}
@@ -322,7 +334,10 @@ export default async function HomePage() {
                         className="inline-flex items-center gap-1 text-xs font-semibold text-gold-light hover:underline"
                       >
                         Đặt lịch
-                        <ArrowRight className="h-3.5 w-3.5" />
+                        <LinkSpinner
+                          className="h-3.5 w-3.5"
+                          fallback={<ArrowRight className="h-3.5 w-3.5" />}
+                        />
                       </Link>
                     </div>
                   </div>
@@ -379,7 +394,10 @@ export default async function HomePage() {
                         )}`}
                         className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-gold/35 bg-gold/10 py-2 text-xs font-semibold text-gold-light transition hover:bg-gold hover:text-obsidian"
                       >
-                        <Scissors className="h-3.5 w-3.5" />
+                        <LinkSpinner
+                          className="h-3.5 w-3.5"
+                          fallback={<Scissors className="h-3.5 w-3.5" />}
+                        />
                         Đặt cắt kiểu này
                       </Link>
                     </div>

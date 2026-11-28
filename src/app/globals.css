@@ -86,6 +86,24 @@ body {
     outline: 2px solid rgba(200, 162, 83, 0.75);
     outline-offset: 2px;
   }
+
+  a[data-nav-loading="true"] {
+    opacity: 0.72;
+    pointer-events: none;
+  }
+}
+
+@keyframes nav-progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.nav-progress-bar {
+  animation: nav-progress-indeterminate 1.15s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Scissors, Sparkles, CalendarCheck } from "lucide-react";
+import { LinkSpinner } from "@/components/LinkSpinner";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -40,12 +41,13 @@ export function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`text-sm font-medium transition-colors ${
+                className={`inline-flex items-center gap-1.5 text-sm font-medium transition-colors ${
                   active
                     ? "text-gold-light"
                     : "text-muted hover:text-ivory"
                 }`}
               >
+                <LinkSpinner className="h-3.5 w-3.5 text-gold" />
                 {item.label}
               </Link>
             );
@@ -57,14 +59,20 @@ export function Navbar() {
             href="/passport"
             className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface px-3 py-2 text-xs font-medium text-ivory/90 transition hover:border-gold/40 hover:text-gold-light md:hidden"
           >
-            <Sparkles className="h-3.5 w-3.5 text-gold" />
+            <LinkSpinner
+              className="h-3.5 w-3.5 text-gold"
+              fallback={<Sparkles className="h-3.5 w-3.5 text-gold" />}
+            />
             Hồ sơ tóc
           </Link>
           <Link
             href="/book"
             className="inline-flex items-center gap-1.5 rounded-full bg-gold px-4 py-2 text-xs font-semibold text-obsidian shadow-lg shadow-gold/15 transition hover:bg-gold-light sm:px-5 sm:text-sm"
           >
-            <CalendarCheck className="h-4 w-4" />
+            <LinkSpinner
+              className="h-4 w-4"
+              fallback={<CalendarCheck className="h-4 w-4" />}
+            />
             Đặt lịch
           </Link>
         </div>

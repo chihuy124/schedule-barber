@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { LinkSpinner } from "@/components/LinkSpinner";
 import {
   CheckCircle2,
   Calendar,
@@ -493,7 +494,10 @@ export function BookingDetailClient({
               href="/passport"
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-4 py-3 text-sm font-semibold text-obsidian transition hover:bg-gold-light"
             >
-              <Sparkles className="h-4 w-4" />
+              <LinkSpinner
+                className="h-4 w-4"
+                fallback={<Sparkles className="h-4 w-4" />}
+              />
               Xem Hồ sơ kiểu tóc
             </Link>
           </div>
